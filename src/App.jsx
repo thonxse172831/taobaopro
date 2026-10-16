@@ -80,6 +80,7 @@ export default function App({ logout }) {
     try { detect(await navigator.clipboard.readText(), true) } catch { notify('Trình duyệt chặn đọc clipboard, hãy dán (Ctrl+V) vào trang') }
   }
   const assign = () => {
+    if (!suggest) return
     const o = orders.find((x) => x.id === suggest.orderId)
     if (o) patchOrder(o.id, { cnTracking: suggest.code, cnCarrier: suggest.carrier, status: normStatus(o.status) === 'Mới' ? 'Đã mua' : o.status })
     notify(`Đã gán ${suggest.code} vào đơn ${suggest.orderId}`)
