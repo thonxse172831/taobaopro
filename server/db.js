@@ -1,7 +1,11 @@
 import { MongoClient } from 'mongodb'
 
-export async function openDb(uri, dbName = 'taobaopro') {
-  if (!uri) throw new Error('Thiếu biến môi trường MONGODB_URI (chuỗi kết nối MongoDB Atlas)')
+export async function openDb(rawUri, dbName = 'taobaopro') {
+  if (!rawUri) throw new Error('Thiếu biến môi trường MONGODB_URI (chuỗi kết nối MongoDB Atlas)')
+  const uri = String(rawUri).trim().replace(/^MONGODB_URI\s*=\s*/i, '').replace(/^["']+|["']+$/g, '').trim()
+  if (!/^mongodb(\+srv)?:\/\/.+/.test(uri)) {
+    throw new Error(`MONGODB_URI không hợp lệ: phải bắt đầu bằng mongodb+srv:// (hiện bắt đầu bằng "${uri.slice(0, 12)}", dài ${uri.length} ký tự)`)
+  }
   const client = new MongoClient(uri, { serverSelectionTimeoutMS: 15000 })
   await client.connect()
   const db = client.db(dbName)
