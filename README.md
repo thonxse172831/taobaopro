@@ -1,4 +1,4 @@
-﻿# TaobaoPro
+# TaobaoPro
 
 Hệ thống bán hàng order Taobao/1688/Pinduoduo: trang quản trị (đăng nhập), trang khách `#/shop`, backend Node + MongoDB Atlas.
 
@@ -28,11 +28,11 @@ Giá bán, giá vốn của đơn khách luôn do server tính lại từ dữ l
 ## Chạy local
 ```
 npm install
-npm run dev        # web http://localhost:5173 + api http://localhost:3000 (mật khẩu dev: admin123)
+npm run dev        # web http://localhost:5173 + api http://localhost:3000 (admin: thanhngancao / test123)
 ```
 
 ## Triển khai
-Sao chép `.env.example` thành `.env`, đặt `ADMIN_PASSWORD`, `SESSION_SECRET`, `WEBHOOK_SECRET`.
+Sao chép `.env.example` thành `.env`, đặt `ADMIN_PASSWORD` (đổi mật khẩu tài khoản admin `thanhngancao`, tuỳ chọn `ADMIN_USER`), `SESSION_SECRET`, `WEBHOOK_SECRET`.
 
 **Docker (khuyến nghị)**
 ```

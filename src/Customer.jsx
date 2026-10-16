@@ -54,7 +54,7 @@ export function ChatBox({ products }) {
   )
 }
 
-export function OrderForm({ products, onSubmit, pick, showDeposit = true, smart = false }) {
+export function OrderForm({ products, onSubmit, pick, showDeposit = true, smart = false, prefill = null }) {
   const blank = { name: '', phone: '', productId: products[0]?.id || '', size: '', color: '', qty: 1, deposit: 0 }
   const [f, setF] = useState(blank)
   const [addr, setAddr] = useState(EMPTY_ADDR)
@@ -74,6 +74,11 @@ export function OrderForm({ products, onSubmit, pick, showDeposit = true, smart 
     const miss = [!r.name && 'tên', !r.phone && 'SĐT', !r.province && 'tỉnh/thành', !r.ward && 'phường/xã', r.mode === 'old' && r.province && !r.district && 'quận/huyện', !r.street && 'số nhà'].filter(Boolean)
     setPasteMsg(miss.length ? `Đã điền, chưa nhận ra: ${miss.join(', ')} — vui lòng bổ sung` : '✅ Đã điền đủ thông tin, kiểm tra lại rồi đặt đơn')
   }
+
+  // Khách đã đăng nhập: tự điền tên và SĐT đã đăng ký
+  useEffect(() => {
+    if (prefill) setF((x) => ({ ...x, name: x.name || prefill.name || '', phone: x.phone || prefill.phone || '' }))
+  }, [prefill])
 
   // Khi khách bấm "Đặt mua" ở một mẫu
   useEffect(() => {

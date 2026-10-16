@@ -7,7 +7,7 @@ import helmet from 'helmet'
 import compression from 'compression'
 import rateLimit from 'express-rate-limit'
 import { openDb } from './db.js'
-import { createAuth } from './auth.js'
+import { createAuth, hashPassword, verifyPassword } from './auth.js'
 import {
   withCosts, normalizeCfg, DEFAULT_PRICING, SEED_PRODUCTS, priceBreakdown, rateOn, orderTotals, trackStep, TRACK_STEPS, STATUS_LABEL, normStatus,
 } from '../src/lib.js'
@@ -52,15 +52,21 @@ const vnToday = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice
 const newId = () => 'DH' + crypto.randomBytes(4).toString('hex').toUpperCase()
 
 export async function createApp(env = process.env) {
-  const prod = env.NODE_ENV === 'production'
-  const password = env.ADMIN_PASSWORD || (prod ? '' : 'admin123')
-  if (!password) throw new Error('Thiếu biến môi trường ADMIN_PASSWORD (bắt buộc khi chạy production)')
-  if (!env.ADMIN_PASSWORD) console.warn('[cảnh báo] Đang dùng mật khẩu admin mặc định "admin123" (chỉ dành cho dev)')
-  const secret = env.SESSION_SECRET || crypto.createHash('sha256').update('tb-session:' + password).digest('hex')
+  const ADMIN_USER = String(env.ADMIN_USER || 'thanhngancao').toLowerCase()
   const distDir = path.join(ROOT, 'dist')
 
   const db = await openDb(env.MONGODB_URI, env.MONGODB_DB || 'taobaopro')
-  const auth = createAuth({ password, secret })
+  const secret = env.SESSION_SECRET || crypto.createHash('sha256').update('tb-session:' + env.MONGODB_URI).digest('hex')
+  const auth = createAuth({ secret })
+
+  // Tài khoản admin mặc định; nếu đặt ADMIN_PASSWORD thì mật khẩu admin luôn đồng bộ theo biến này
+  const adminRow = await db.getUser(ADMIN_USER)
+  if (!adminRow) {
+    await db.createUser({ username: ADMIN_USER, name: 'Quản trị', phone: '', role: 'admin', passHash: hashPassword(env.ADMIN_PASSWORD || 'test123') })
+    if (!env.ADMIN_PASSWORD) console.warn(`[cảnh báo] Tài khoản admin "${ADMIN_USER}" dùng mật khẩu mặc định, hãy đổi bằng ADMIN_PASSWORD`)
+  } else if (env.ADMIN_PASSWORD && !verifyPassword(env.ADMIN_PASSWORD, adminRow.passHash)) {
+    await db.setUserPassword(ADMIN_USER, hashPassword(env.ADMIN_PASSWORD))
+  }
 
   if ((await db.getKv('products')) === undefined) await db.setKv('products', SEED_PRODUCTS)
   if ((await db.getKv('rates')) === undefined) await db.setKv('rates', [{ date: '2026-01-01', rate: 3600 }])
@@ -105,15 +111,52 @@ export async function createApp(env = process.env) {
 
   api.get('/health', (req, res) => res.json({ ok: true }))
 
-  // ---------- Đăng nhập admin ----------
-  const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Thử lại sau 15 phút' } })
-  api.post('/auth/login', loginLimit, (req, res) => {
-    if (!auth.checkPassword(req.body?.password)) return res.status(401).json({ error: 'Sai mật khẩu' })
-    auth.setCookie(req, res)
-    res.json({ ok: true })
+  // ---------- Tài khoản: đăng nhập / đăng ký ----------
+  const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 15, skipSuccessfulRequests: true, standardHeaders: true, legacyHeaders: false, message: { error: 'Thử lại sau 15 phút' } })
+  const registerLimit = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Đăng ký quá nhiều lần, thử lại sau' } })
+  const pub = (u) => ({ username: u._id, name: u.name, phone: u.phone || '', role: u.role })
+
+  api.post('/auth/login', loginLimit, async (req, res) => {
+    const username = clip(req.body?.username, 40).toLowerCase()
+    const u = username && await db.getUser(username)
+    if (!u || !verifyPassword(req.body?.password, u.passHash)) return res.status(401).json({ error: 'Sai tên đăng nhập hoặc mật khẩu' })
+    auth.setCookie(req, res, { username: u._id, role: u.role })
+    res.json({ ok: true, user: pub(u) })
+  })
+  api.post('/auth/register', registerLimit, async (req, res) => {
+    const b = req.body || {}
+    const username = clip(b.username, 40).toLowerCase()
+    const name = clip(b.name, 80)
+    const phone = clip(b.phone, 20).replace(/[\s.-]/g, '')
+    const pw = String(b.password ?? '')
+    if (!/^[a-z0-9_.]{3,30}$/.test(username)) return res.status(400).json({ error: 'Tên đăng nhập 3-30 ký tự: chữ thường không dấu, số, _ hoặc .' })
+    if (pw.length < 6 || pw.length > 100) return res.status(400).json({ error: 'Mật khẩu tối thiểu 6 ký tự' })
+    if (!name) return res.status(400).json({ error: 'Vui lòng nhập họ tên' })
+    if (phone && !/^(\+?84|0)\d{8,10}$/.test(phone)) return res.status(400).json({ error: 'Số điện thoại không hợp lệ' })
+    const user = { username, name, phone, role: 'customer', passHash: hashPassword(pw) }
+    try {
+      await db.createUser(user)
+    } catch (e) {
+      if (e?.code === 11000) return res.status(409).json({ error: 'Tên đăng nhập đã tồn tại' })
+      throw e
+    }
+    auth.setCookie(req, res, user)
+    res.status(201).json({ ok: true, user: pub({ _id: username, ...user }) })
   })
   api.post('/auth/logout', (req, res) => { auth.clearCookie(res); res.json({ ok: true }) })
-  api.get('/auth/me', (req, res) => res.json({ authed: auth.isAuthed(req) }))
+  api.get('/auth/me', async (req, res) => {
+    const s = auth.session(req)
+    const u = s && await db.getUser(s.username)
+    res.json({ user: u ? pub(u) : null })
+  })
+
+  // Khách đã đăng nhập xem đơn của mình
+  api.get('/me/orders', auth.requireUser, async (req, res) => {
+    res.json((await db.ordersByOwner(req.user.username)).map((o) => ({
+      id: o.id, trackCode: o.trackCode, createdAt: o.createdAt, status: o.status,
+      items: (o.items || []).map(({ name, size, color, qty, price }) => ({ name, size, color, qty, price })),
+    })))
+  })
 
   // ---------- Khách: xem mẫu & đặt hàng ----------
   api.get('/public/events', openStream('public'))
@@ -149,7 +192,7 @@ export async function createApp(env = process.env) {
       items.push({ productId: p.id, name: p.name, size, color, qty, price: p.priceVnd, cost: 0 })
     }
     const order = withCosts({
-      id: newId(), trackCode: newTrackCode(), createdAt: vnToday(), statusAt: new Date().toISOString(), status: 'Mới', deposit: 0, source: 'shop', customer, items,
+      id: newId(), trackCode: newTrackCode(), owner: auth.session(req)?.username, createdAt: vnToday(), statusAt: new Date().toISOString(), status: 'Mới', deposit: 0, source: 'shop', customer, items,
     }, products, (await db.getKv('rates')) || [], normalizeCfg(await db.getKv('pricing')))
     await db.saveOrder(order)
     broadcast('admin', 'orders')
@@ -201,7 +244,7 @@ export async function createApp(env = process.env) {
 
   // ---------- Admin ----------
   const admin = express.Router()
-  admin.use(auth.require)
+  admin.use(auth.requireAdmin)
   admin.get('/events', openStream('admin'))
   admin.get('/state', async (req, res) => res.json({ ...(await db.allKv()), orders: await db.listOrders() }))
   admin.put('/state/:key', async (req, res) => {

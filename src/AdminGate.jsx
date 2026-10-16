@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import { loadAdminState } from './store'
+import { AuthForm } from './Account'
 import { ThemeToggle, useTheme } from './ui'
 
 export default function AdminGate({ children }) {
   const [state, setState] = useState('checking')
-  const [pw, setPw] = useState('')
   const [err, setErr] = useState('')
-  const [busy, setBusy] = useState(false)
   const [dark, setDark] = useTheme()
 
   const enter = async () => {
@@ -16,25 +15,16 @@ export default function AdminGate({ children }) {
   }
 
   useEffect(() => {
-    api('/auth/me').then((r) => (r.authed ? enter() : setState('out'))).catch((e) => { setErr(e.message); setState('out') })
+    api('/auth/me').then((r) => (r.user?.role === 'admin' ? enter() : setState('out'))).catch((e) => { setErr(e.message); setState('out') })
     const on = () => setState('out')
     window.addEventListener('tb-unauthorized', on)
     return () => window.removeEventListener('tb-unauthorized', on)
   }, [])
 
-  const login = async (e) => {
-    e.preventDefault()
-    setBusy(true)
+  const done = (u) => {
+    if (u.role !== 'admin') return setErr('Tài khoản này không có quyền quản trị')
     setErr('')
-    try {
-      await api('/auth/login', { method: 'POST', body: { password: pw } })
-      setPw('')
-      await enter()
-    } catch (x) {
-      setErr(x.message)
-    } finally {
-      setBusy(false)
-    }
+    enter()
   }
 
   if (state === 'checking') return <div className="login"><p className="muted">Đang tải…</p></div>
@@ -42,19 +32,15 @@ export default function AdminGate({ children }) {
 
   return (
     <div className="login">
-      <form className="card login-card" onSubmit={login}>
-        <div className="row" style={{ justifyContent: 'space-between' }}>
-          <b className="logo">TaobaoPro</b>
+      <div style={{ width: '100%', maxWidth: 380 }}>
+        <div className="row" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
+          <b className="logo">TaobaoPro · Quản trị</b>
           <ThemeToggle dark={dark} setDark={setDark} />
         </div>
-        <h3>Đăng nhập quản trị</h3>
-        <label>Mật khẩu
-          <input type="password" autoFocus autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} />
-        </label>
+        <AuthForm onDone={done} />
         {err && <p className="err">{err}</p>}
-        <button className="primary" disabled={busy || !pw}>{busy ? '…' : 'Đăng nhập'}</button>
-        <a href="/order" className="muted">← Về trang khách</a>
-      </form>
+        <p style={{ textAlign: 'center' }}><a href="/order" className="muted">← Về trang khách</a></p>
+      </div>
     </div>
   )
 }

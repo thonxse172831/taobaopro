@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { ChatBox, OrderForm } from './Customer'
+import { MyOrders, useAccount } from './Account'
 import { ThemeToggle, useTheme } from './ui'
 import { vnd, STOCK_STATUS, ETA } from './lib'
 
@@ -18,6 +19,8 @@ export default function Shop() {
     return () => es.close()
   }, [])
   const [dark, setDark] = useTheme()
+  const { user, logout } = useAccount()
+  const [mine, setMine] = useState(false)
   const [q, setQ] = useState('')
   const [tag, setTag] = useState('')
   const [pick, setPick] = useState(null)
@@ -42,7 +45,16 @@ export default function Shop() {
         <b className="logo">TaobaoPro</b>
         <span className="muted tagline" style={{ flex: 1 }}>Order hàng Taobao/1688 chính ngạch · giá rõ ràng</span>
         <ThemeToggle dark={dark} setDark={setDark} />
+        {user === null && <button className="primary" onClick={() => { location.href = '/login' }}>Đăng nhập / Đăng ký</button>}
+        {user && (
+          <>
+            <span className="muted">Xin chào, <b>{user.name}</b></span>
+            {user.role === 'admin' ? <button onClick={() => { location.href = '/admin' }}>Quản trị</button> : <button onClick={() => setMine(true)}>Đơn của tôi</button>}
+            <button onClick={logout}>Thoát</button>
+          </>
+        )}
       </header>
+      {mine && <MyOrders onClose={() => setMine(false)} />}
       <main>
         <section className="hero">
           <h1>Mẫu hot mới về 🔥</h1>
@@ -71,7 +83,7 @@ export default function Shop() {
         </div>
 
         <div className="grid2 top" style={{ marginTop: 24 }}>
-          <OrderForm products={products} onSubmit={submit} pick={pick} showDeposit={false} />
+          <OrderForm products={products} onSubmit={submit} pick={pick} showDeposit={false} prefill={user?.role === 'customer' ? user : null} />
           <div className={'chat-wrap sticky' + (chatOpen ? ' open' : '')}>
             <button type="button" className="sheet-close" onClick={() => setChatOpen(false)}>✕ Đóng</button>
             <ChatBox products={products} />
