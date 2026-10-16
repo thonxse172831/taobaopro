@@ -5,10 +5,28 @@ import { api } from './api'
 let cache = {}
 export const loadAdminState = async () => { cache = await api('/admin/state') }
 
+// Một kết nối SSE dùng chung cho mọi hook
+const listeners = { orders: new Set(), state: new Set(), open: new Set() }
+let es
+function ensureStream() {
+  if (es) return
+  es = new EventSource('/api/admin/events')
+  es.addEventListener('orders', () => listeners.orders.forEach((f) => f()))
+  es.addEventListener('state', () => listeners.state.forEach((f) => f()))
+  es.onopen = () => listeners.open.forEach((f) => f())
+}
+function subscribe(ev, fn) {
+  ensureStream()
+  listeners[ev].add(fn)
+  return () => listeners[ev].delete(fn)
+}
+
 const saveTimers = {}
+const dirty = new Set()
 function scheduleSave(key, value) {
+  dirty.add(key)
   clearTimeout(saveTimers[key])
-  saveTimers[key] = setTimeout(() => api(`/admin/state/${key}`, { method: 'PUT', body: { value } }).catch(() => {}), 500)
+  saveTimers[key] = setTimeout(() => api(`/admin/state/${key}`, { method: 'PUT', body: { value } }).catch(() => {}).finally(() => dirty.delete(key)), 500)
 }
 
 export function useServerKV(key, initial) {
@@ -20,10 +38,21 @@ export function useServerKV(key, initial) {
     setV(next)
     scheduleSave(key, next)
   }, [key])
+
+  // Server báo dữ liệu đổi (VD: lưu mẫu từ bookmarklet) → nạp lại nếu chưa có thay đổi đang chờ ghi
+  useEffect(() => subscribe('state', async () => {
+    try {
+      const s = await api('/admin/state')
+      if (dirty.has(key) || s[key] === undefined) return
+      cache = s
+      cur.current = s[key]
+      setV(s[key])
+    } catch { /* mất mạng tạm thời */ }
+  }), [key])
   return [v, set]
 }
 
-// Đơn hàng: ghi từng đơn (khách có thể đặt đơn mới bất kỳ lúc nào) và kéo đơn mới mỗi 5 giây
+// Đơn hàng: ghi từng đơn (khách có thể đặt đơn mới bất kỳ lúc nào), realtime qua SSE
 export function useOrders() {
   const cur = useRef(cache.orders || [])
   const [orders, setState] = useState(cur.current)
@@ -59,12 +88,9 @@ export function useOrders() {
         setState(list)
       } catch { /* mất mạng tạm thời */ }
     }
-    // Realtime qua SSE; vẫn kiểm tra lại mỗi 30 giây phòng khi mất kết nối
-    const es = new EventSource('/api/admin/events')
-    es.addEventListener('orders', pull)
-    es.onopen = pull
+    const offs = [subscribe('orders', pull), subscribe('open', pull)]
     const t = setInterval(pull, 30000)
-    return () => { es.close(); clearInterval(t); clearTimeout(retry) }
+    return () => { offs.forEach((f) => f()); clearInterval(t); clearTimeout(retry) }
   }, [])
 
   return { orders, setOrders: set, newCount, clearNew: () => setNewCount(0) }

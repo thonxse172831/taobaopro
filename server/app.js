@@ -8,11 +8,29 @@ import compression from 'compression'
 import rateLimit from 'express-rate-limit'
 import { openDb } from './db.js'
 import { createAuth } from './auth.js'
-import { withCosts, normalizeCfg, DEFAULT_PRICING, SEED_PRODUCTS } from '../src/lib.js'
+import {
+  withCosts, normalizeCfg, DEFAULT_PRICING, SEED_PRODUCTS, priceBreakdown, rateOn, orderTotals, trackStep, TRACK_STEPS, STATUS_LABEL, normStatus,
+} from '../src/lib.js'
 import { mapWebhook } from '../src/logistics.js'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const KV_KEYS = new Set(['products', 'rates', 'pricing', 'links', 'linkcfg'])
+const KV_KEYS = new Set(['products', 'rates', 'pricing', 'links', 'linkcfg', 'shop', 'layouts'])
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+const newTrackCode = () => Array.from(crypto.randomBytes(8), (n) => CODE_CHARS[n % CODE_CHARS.length]).join('')
+const maskName = (n = '') => n.split(' ').filter(Boolean).map((w, i, a) => (i === 0 || i === a.length - 1 ? w : w[0] + '.')).join(' ')
+const SOURCE_HOST = /(^|\.)(taobao\.com|tmall\.com|1688\.com|tb\.cn|yangkeduo\.com|pinduoduo\.com)$/
+const httpsUrl = (u) => {
+  try {
+    const x = new URL(u)
+    return x.protocol === 'https:' ? x.href.slice(0, 1000) : ''
+  } catch { return '' }
+}
+const itemId = (u) => {
+  try {
+    const x = new URL(u)
+    return x.searchParams.get('id') || x.searchParams.get('goods_id') || (x.pathname.match(/\/offer\/(\d+)/) || [])[1] || ''
+  } catch { return '' }
+}
 const CARRIERS = new Set(['ghn', 'spx', 'jt', 'viettelpost'])
 const PUBLIC_FIELDS = ['id', 'name', 'image', 'sizes', 'colors', 'tags', 'category', 'priceVnd', 'stock', 'status', 'createdAt']
 
@@ -131,11 +149,28 @@ export async function createApp(env = process.env) {
       items.push({ productId: p.id, name: p.name, size, color, qty, price: p.priceVnd, cost: 0 })
     }
     const order = withCosts({
-      id: newId(), createdAt: vnToday(), status: 'Mới', deposit: 0, source: 'shop', customer, items,
+      id: newId(), trackCode: newTrackCode(), createdAt: vnToday(), statusAt: new Date().toISOString(), status: 'Mới', deposit: 0, source: 'shop', customer, items,
     }, products, (await db.getKv('rates')) || [], normalizeCfg(await db.getKv('pricing')))
     await db.saveOrder(order)
     broadcast('admin', 'orders')
-    res.status(201).json({ ok: true, id: order.id })
+    res.status(201).json({ ok: true, id: order.id, trackCode: order.trackCode })
+  })
+
+  // Trang theo dõi đơn của khách: chỉ trả dữ liệu rút gọn, tra theo mã ngẫu nhiên khó đoán
+  api.get('/public/track/:code', rateLimit({ windowMs: 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false }), async (req, res) => {
+    const code = clip(req.params.code, 20).toUpperCase()
+    const o = code ? await db.orderByTrackCode(code) : undefined
+    if (!o) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' })
+    const shop = (await db.getKv('shop')) || {}
+    const t = orderTotals(o)
+    res.set('Cache-Control', 'no-store').json({
+      id: o.id, createdAt: o.createdAt, statusAt: o.statusAt || null, status: normStatus(o.status), label: STATUS_LABEL[normStatus(o.status)] || o.status,
+      step: trackStep(o.status), steps: TRACK_STEPS, canceled: o.status === 'Đã hủy',
+      customer: maskName(o.customer?.name), carrier: o.carrier || '', tracking: o.tracking || '',
+      items: o.items.map(({ name, size, color, qty, price }) => ({ name, size, color, qty, price })),
+      total: t.revenue, deposit: o.deposit || 0, cod: t.cod,
+      shop: { name: shop.name || 'TaobaoPro', phone: shop.phone || '' },
+    })
   })
 
   api.get('/public/orders/:id', rateLimit({ windowMs: 60 * 1000, limit: 20, standardHeaders: true,   legacyHeaders: false }), async (req, res) => {
@@ -157,7 +192,7 @@ export async function createApp(env = process.env) {
     const m = mapWebhook(req.body || {})
     const o = m.trackingId && await db.orderByTracking(String(m.trackingId))
     if (!o) return res.status(404).json({ error: 'Không thấy mã vận đơn' })
-    const next = { ...o, status: m.status }
+    const next = { ...o, status: m.status, statusAt: new Date().toISOString() }
     if (m.status === 'Hoàn thành' && !next.deliveredAt) next.deliveredAt = vnToday()
     await db.saveOrder(next)
     broadcast('admin', 'orders')
@@ -180,9 +215,39 @@ export async function createApp(env = process.env) {
   admin.put('/orders/:id', async (req, res) => {
     const o = req.body
     if (!o || o.id !== req.params.id || !o.customer || !Array.isArray(o.items)) return res.status(400).json({ error: 'Đơn không hợp lệ' })
+    if (!o.trackCode) o.trackCode = newTrackCode()
     await db.saveOrder(o)
     broadcast('admin', 'orders')
     res.json({ ok: true })
+  })
+
+  // Lưu mẫu 1 chạm từ bookmarklet (trang /clip gọi sau khi quản trị viên đã đăng nhập)
+  admin.post('/clip', async (req, res) => {
+    const b = req.body || {}
+    const url = httpsUrl(b.url)
+    let host = ''
+    try { host = new URL(url).hostname } catch { /* url rỗng */ }
+    if (!url || !SOURCE_HOST.test(host)) return res.status(400).json({ error: 'Chỉ hỗ trợ link Taobao/1688/Tmall/Pinduoduo' })
+    const name = clip(b.name, 200)
+    if (!name) return res.status(400).json({ error: 'Không đọc được tên sản phẩm' })
+    const priceCny = Math.max(0, Number(b.priceCny) || 0)
+    const images = (Array.isArray(b.images) ? b.images : []).map(httpsUrl).filter(Boolean).slice(0, 12)
+    const products = (await db.getKv('products')) || []
+    const iid = itemId(url)
+    const dup = products.find((p) => p.sourceUrl && (p.sourceUrl === url || (iid && itemId(p.sourceUrl) === iid)))
+    if (dup) return res.json({ ok: true, duplicate: true, id: dup.id, name: dup.name })
+
+    const cfg = normalizeCfg(await db.getKv('pricing'))
+    const rate = rateOn((await db.getKv('rates')) || [], vnToday())
+    const final = Math.ceil(priceBreakdown({ priceCny, weightKg: 0 }, rate, cfg).final / 1000) * 1000
+    const p = {
+      id: crypto.randomBytes(4).toString('hex'), name, image: images[0] || '', images, sourceUrl: url, priceCny, domesticShipCny: 0, weightKg: 0,
+      sizes: ['Free size'], colors: ['Mặc định'], tags: ['mới lưu'], category: 'Chưa phân loại', priceVnd: final, stock: 0, status: 'TQ', createdAt: vnToday(),
+    }
+    await db.setKv('products', [p, ...products])
+    broadcast('admin', 'state')
+    broadcast('public', 'catalog')
+    res.status(201).json({ ok: true, id: p.id, name: p.name, priceCny, priceVnd: final, images: images.length })
   })
   admin.delete('/orders/:id', async (req, res) => { await db.deleteOrder(req.params.id); broadcast('admin', 'orders'); res.json({ ok: true }) })
   api.use('/admin', admin)

@@ -1,0 +1,86 @@
+/* ===== Tìm kiếm, gợi ý, thông báo ===== */
+.search{min-width:200px;border-radius:999px}
+.suggest{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--brand-soft);border-bottom:1px solid var(--border);padding:10px 24px}
+.suggest span{flex:1;min-width:220px}
+.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 20px;border-radius:999px;font-weight:600;z-index:80;box-shadow:var(--shadow);max-width:90vw}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px;z-index:60}
+.modal-box{width:min(720px,100%);display:flex;flex-direction:column;gap:12px}
+.modal-box>.card{margin:0}
+.layout-bar button.on{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;border-color:transparent}
+label.check{flex-direction:row;align-items:center;gap:8px;flex:1}
+.tablewrap{overflow-x:auto}
+.preview{background:var(--surface2);border-radius:14px;padding:12px 14px;white-space:pre-wrap}
+.smartpaste{background:var(--brand-soft);border:1px dashed var(--brand);border-radius:16px;padding:12px;margin-bottom:12px}
+.smartpaste textarea{width:100%}
+textarea{width:100%;resize:vertical}
+.bookmarklet{display:inline-block;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;border-radius:999px;padding:10px 20px;text-decoration:none;cursor:grab}
+
+/* ===== Kanban ===== */
+.kanban{display:flex;gap:14px;overflow-x:auto;padding-bottom:12px;align-items:flex-start;scroll-snap-type:x proximity;margin-bottom:18px}
+.kcol{flex:0 0 280px;background:var(--surface2);border:2px dashed transparent;border-radius:20px;padding:12px;display:flex;flex-direction:column;gap:10px;min-height:140px;scroll-snap-align:start}
+.kcol.over{border-color:var(--brand);background:var(--brand-soft)}
+.kcol h4{margin:0 0 2px;display:flex;justify-content:space-between;align-items:center}
+.count{background:var(--surface);border-radius:999px;padding:1px 9px;font-size:12px;color:var(--muted)}
+.kempty{text-align:center;margin:12px 0}
+.kgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.kcard{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:6px;box-shadow:var(--shadow);cursor:grab;font-size:14px}
+.kcard:active{cursor:grabbing}
+.khead{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.kactions{display:flex;gap:6px;flex-wrap:wrap}
+.kactions button,.kactions .btn-link{padding:5px 10px;border-radius:10px;font-size:13px;text-decoration:none;border:1px solid var(--border);background:var(--surface2)}
+.kactions .primary{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff}
+.kmove{display:none;font-size:13px;padding:6px 10px}
+.kcard.stale{border-color:var(--err);background:color-mix(in srgb,var(--err) 10%,var(--surface));animation:shake 2.2s ease-in-out infinite}
+.warn-line{color:var(--err);font-size:12px;font-weight:600}
+@keyframes shake{0%,86%,100%{transform:none}88%{transform:translateX(-3px) rotate(-.6deg)}91%{transform:translateX(3px) rotate(.6deg)}94%{transform:translateX(-2px)}97%{transform:translateX(2px)}}
+@media (prefers-reduced-motion:reduce){.kcard.stale{animation:none}}
+@media (hover:none),(max-width:720px){.kmove{display:block}.kcol{flex-basis:84vw}}
+
+/* ===== Quét mã ===== */
+.scanbox{position:relative;background:#000;border-radius:18px;overflow:hidden;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center}
+.scanbox video{width:100%;height:100%;object-fit:cover}
+.scanline{position:absolute;left:8%;right:8%;height:2px;background:var(--brand);box-shadow:0 0 12px var(--brand);animation:scan 2s linear infinite}
+@keyframes scan{0%{top:15%}50%{top:85%}100%{top:15%}}
+.scanhint{position:absolute;color:#fff;text-align:center;padding:16px;font-size:14px}
+.scanlog{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
+.scanlog li{background:var(--surface2);border-radius:12px;padding:8px 12px}
+
+/* ===== Trang theo dõi của khách ===== */
+.steps{list-style:none;display:flex;padding:0;margin:8px 0 18px;gap:0}
+.steps li{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;position:relative;text-align:center;font-size:12px;color:var(--muted)}
+.steps li:not(:last-child)::after{content:'';position:absolute;top:15px;left:50%;width:100%;height:3px;background:var(--border)}
+.steps li.done:not(:last-child)::after{background:var(--brand)}
+.steps .dot{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;background:var(--surface2);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:700}
+.steps .done .dot{background:var(--brand);border-color:var(--brand);color:#fff}
+.steps .now .dot{border-color:var(--brand);color:var(--brand);box-shadow:0 0 0 5px rgba(249,115,22,.2)}
+.steps .now,.steps .done{color:var(--text);font-weight:600}
+hr{border:0;border-top:1px solid var(--border);margin:10px 0}
+
+/* ===== Hóa đơn K80 ===== */
+.bill-wrap{align-items:center;width:auto}
+.bill{width:76mm;background:#fff;color:#000;padding:4mm;font:12px/1.4 'Courier New',monospace;border-radius:8px}
+.bill h2{margin:0;text-align:center;font-size:18px}
+.bill .c{text-align:center}.bill .sep{border-top:1px dashed #000;border-bottom:1px dashed #000;margin:6px 0;padding:2px 0;font-weight:700}
+.bill-items{width:100%;border:0;box-shadow:none;background:none;border-radius:0;margin:6px 0}
+.bill-items td{border:0;padding:2px 0;font-size:12px;color:#000}.bill-items .r{text-align:right;white-space:nowrap}
+.bill .line{display:flex;justify-content:space-between}.bill .line.big{font-size:14px;border-top:1px dashed #000;margin-top:4px;padding-top:4px}
+.bill .qr img{width:42mm;height:42mm}
+#bill-root{display:none}
+#bill-root:has(.modal){display:block}
+@media print{
+  @page{size:80mm auto;margin:0}
+  html,body{background:#fff!important}
+  #root,.toast{display:none!important}
+  #bill-root .modal{position:static;background:none;padding:0;display:block;overflow:visible}
+  #bill-root .modal-box{width:auto;padding:0}
+  .no-print{display:none!important}
+  .bill{width:80mm;border-radius:0;padding:3mm}
+}
+
+/* ===== Điện thoại ===== */
+@media (max-width:720px){
+  .search{order:9;flex:1 1 100%}
+  header{padding:10px 14px}
+  main{padding:14px}
+  .suggest{padding:10px 14px}
+}

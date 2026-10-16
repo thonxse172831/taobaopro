@@ -30,7 +30,7 @@ export default function Shop() {
     return hay.includes(q.toLowerCase()) && (!tag || p.tags.includes(tag))
   })
 
-  const submit = (o) => api('/public/orders', { method: 'POST', body: o }).then((r) => r.id)
+  const submit = (o) => api('/public/orders', { method: 'POST', body: o })
   const buy = (id) => {
     setPick({ id, n: Date.now() })
     go('order-form')

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { vnd, uid, today, STOCK_STATUS, ETA } from './lib'
-import { AddressPicker, EMPTY_ADDR, addrError } from './address'
+import { AddressPicker, EMPTY_ADDR, addrError, useVnData } from './address'
+import { smartParse } from './smartpaste'
 
 // Bot tư vấn theo luật: tìm mẫu theo tên/tag, trả lời giá, size, thời gian nhận hàng
 export function reply(text, products) {
@@ -53,12 +54,26 @@ export function ChatBox({ products }) {
   )
 }
 
-export function OrderForm({ products, onSubmit, pick, showDeposit = true }) {
+export function OrderForm({ products, onSubmit, pick, showDeposit = true, smart = false }) {
   const blank = { name: '', phone: '', productId: products[0]?.id || '', size: '', color: '', qty: 1, deposit: 0 }
   const [f, setF] = useState(blank)
   const [addr, setAddr] = useState(EMPTY_ADDR)
-  const [done, setDone] = useState('')
+  const [done, setDone] = useState(null)
   const [err, setErr] = useState('')
+  const [paste, setPaste] = useState('')
+  const [pasteMsg, setPasteMsg] = useState('')
+  const oldData = useVnData('old')
+  const newData = useVnData('new')
+
+  // Smart Paste: dán nguyên dòng "Tên, SĐT, địa chỉ…" để tự điền các ô (chỉ dùng cho admin)
+  const runPaste = (text = paste) => {
+    if (!oldData.rows || !newData.rows) return setPasteMsg('Đang tải dữ liệu địa chỉ, thử lại sau giây lát')
+    const r = smartParse(text, oldData.rows, newData.rows)
+    setF((x) => ({ ...x, name: r.name || x.name, phone: r.phone || x.phone }))
+    setAddr({ mode: r.mode, province: r.province, district: r.district, ward: r.ward, street: r.street })
+    const miss = [!r.name && 'tên', !r.phone && 'SĐT', !r.province && 'tỉnh/thành', !r.ward && 'phường/xã', r.mode === 'old' && r.province && !r.district && 'quận/huyện', !r.street && 'số nhà'].filter(Boolean)
+    setPasteMsg(miss.length ? `Đã điền, chưa nhận ra: ${miss.join(', ')} — vui lòng bổ sung` : '✅ Đã điền đủ thông tin, kiểm tra lại rồi đặt đơn')
+  }
 
   // Khi khách bấm "Đặt mua" ở một mẫu
   useEffect(() => {
@@ -88,23 +103,44 @@ export function OrderForm({ products, onSubmit, pick, showDeposit = true }) {
       items: [{ productId: p.id, name: p.name, size: f.size || p.sizes[0], color: f.color || p.colors[0], qty: Math.max(1, Number(f.qty) || 1), price: p.priceVnd, cost: 0 }],
     }
     setBusy(true)
-    let id = order.id
+    let res
     try {
-      id = (await onSubmit(order)) || id
+      res = await onSubmit(order)
     } catch (x) {
       setBusy(false)
       return setErr(x.message || 'Không gửi được đơn, vui lòng thử lại')
     }
     setBusy(false)
-    setDone(id)
+    setDone({ id: (typeof res === 'string' ? res : res?.id) || order.id, trackCode: res?.trackCode })
     setF({ ...blank, productId: f.productId })
     setAddr(EMPTY_ADDR)
+    setPaste('')
+    setPasteMsg('')
   }
 
   return (
     <form className="card" onSubmit={submit} id="order-form">
-      <h3>📝 Form đặt hàng</h3>
-      {done && <p className="ok">✅ Đã gửi đơn {done}. Shop sẽ liên hệ xác nhận qua SĐT của bạn!</p>}
+      <h3>📝 {smart ? 'Tạo đơn mới' : 'Form đặt hàng'}</h3>
+      {done && (
+        <p className="ok">
+          ✅ Đã gửi đơn {done.id}. {smart ? '' : 'Shop sẽ liên hệ xác nhận qua SĐT của bạn!'}
+          {done.trackCode && <> <a href={`/track/${done.trackCode}`}>Theo dõi đơn hàng →</a></>}
+        </p>
+      )}
+      {smart && (
+        <div className="smartpaste">
+          <label>⚡ Smart Paste — dán nguyên địa chỉ khách nhắn
+            <textarea
+              rows="2"
+              value={paste}
+              onChange={(e) => setPaste(e.target.value)}
+              onPaste={(e) => { const t = e.clipboardData.getData('text'); if (t) setTimeout(() => runPaste(t), 0) }}
+              placeholder="Nguyễn Văn A, 0901234567, 123 Lê Lợi, Phường Bến Thành, Quận 1, HCM"
+            />
+          </label>
+          <div className="row"><button type="button" onClick={() => runPaste()} disabled={!paste.trim()}>Bóc tách & điền</button>{pasteMsg && <small className={pasteMsg.startsWith('✅') ? 'ok' : 'muted'}>{pasteMsg}</small>}</div>
+        </div>
+      )}
       <div className="grid2" style={{ gap: 12 }}>
         <label>Họ tên *<input required value={f.name} onChange={set('name')} /></label>
         <label>SĐT *<input required inputMode="tel" pattern="0\d{9}" title="SĐT 10 số bắt đầu bằng 0" value={f.phone} onChange={set('phone')} /></label>

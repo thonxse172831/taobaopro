@@ -15,6 +15,16 @@ Hệ thống bán hàng order Taobao/1688/Pinduoduo: trang quản trị (đăng 
 
 Giá bán, giá vốn của đơn khách luôn do server tính lại từ dữ liệu mẫu (không tin giá khách gửi).
 
+## Tính năng Zero-Touch
+
+- **Smart Paste**: dán 1 dòng địa chỉ vào form đơn mới (admin) để tự tách tên, SĐT, tỉnh, huyện, xã.
+- **Lưu vào kho 1 chạm**: tab "Cửa hàng" có bookmarklet; kéo vào thanh bookmark, bấm khi đang xem sản phẩm Taobao/1688/Pinduoduo (cần đăng nhập `/admin` trước).
+- **Mã vận đơn TQ**: copy mã YT/SF/ZTO/STO... hệ thống gợi ý gán vào đơn đang chờ.
+- **Kanban + Layout**: kéo thả trạng thái, lưu nhiều layout; thẻ "Đã mua" quá 5 ngày chuyển đỏ.
+- **Hotkeys**: Ctrl+S lưu, Ctrl+F tìm khách, Ctrl+N hoặc Alt+N đơn mới.
+- **Theo dõi đơn cho khách**: `/track/MÃ`.
+- **Câu chốt đơn, Bill K80 + QR VietQR**, **quét mã vạch bằng camera** (cần HTTPS) và PWA (cài lên điện thoại).
+
 ## Chạy local
 ```
 npm install

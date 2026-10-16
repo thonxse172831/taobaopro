@@ -1,174 +1,206 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { NumInput, ThemeToggle, useTheme } from './ui'
 import {
-  vnd, today, uid, daysAgo, rateOn, costVnd, orderTotals, copyForCustomer, DEFAULT_PRICING, priceBreakdown, FEE_MODES,
-  normalizeCfg, withCosts, fullAddress, STOCK_STATUS, ORDER_STATUS, CARRIERS, SEED_PRODUCTS,
+  vnd, today, uid, rateOn, costVnd, orderTotals, copyForCustomer, DEFAULT_PRICING, priceBreakdown, FEE_MODES,
+  normalizeCfg, withCosts, fullAddress, STOCK_STATUS, ORDER_STATUS, STATUS_LABEL, normStatus, newTrackCode, SEED_PRODUCTS, DEFAULT_SHOP,
 } from './lib'
-import { CARRIER_CONFIG, buildShipment, createShipment, mapWebhook } from './logistics'
 import { ChatBox, OrderForm } from './Customer'
 import Links from './Links'
+import Workspace, { DEFAULT_LAYOUTS } from './Workspace'
+import Kanban, { orderMatches } from './Kanban'
+import { useShipping, ShippingConfig } from './Shipping'
+import ShopSettings from './ShopSettings'
+import Scan from './Scan'
+import Bill from './Bill'
+import { BarChart, PieChart, Metrics, dashboardStats } from './charts'
+import { detectCnTracking, nearestWaitingOrder } from './track'
 import { useServerKV, useOrders } from './store'
 
-const TABS = ['Thống kê', 'Mẫu hàng', 'Link đã lưu', 'Đơn hàng', 'Cài đặt giá & Thuế', 'Đặt hàng & Tư vấn']
-const COLORS = ['#f97316', '#3b82f6', '#10b981', '#a855f7', '#ef4444', '#eab308', '#64748b']
+const TABS = [
+  ['work', 'Bàn làm việc'], ['stats', 'Thống kê'], ['catalog', 'Mẫu hàng'], ['links', 'Link đã lưu'], ['orders', 'Đơn hàng'],
+  ['scan', 'Quét mã'], ['pricing', 'Giá & Thuế'], ['shop', 'Cửa hàng'], ['form', 'Đặt hàng & Tư vấn'],
+]
 
 export default function App({ logout }) {
-  const [tab, setTab] = useState(TABS[0])
+  const [tab, setTab] = useState('work')
   const [products, setProducts] = useServerKV('products', SEED_PRODUCTS)
   const { orders, setOrders, newCount, clearNew } = useOrders()
   const [rates, setRates] = useServerKV('rates', [{ date: '2026-01-01', rate: 3600 }])
   const [saved, setCfg] = useServerKV('pricing', DEFAULT_PRICING)
+  const [shopSaved, setShop] = useServerKV('shop', DEFAULT_SHOP)
+  const [layouts, setLayouts] = useServerKV('layouts', DEFAULT_LAYOUTS)
   const cfg = normalizeCfg(saved)
+  const shop = { ...DEFAULT_SHOP, ...shopSaved }
   const [dark, setDark] = useTheme()
+  const [q, setQ] = useState('')
+  const [modal, setModal] = useState(null)
+  const [bill, setBill] = useState(null)
+  const [suggest, setSuggest] = useState(null)
+  const [toast, setToast] = useState('')
+  const searchRef = useRef(null)
+  const toastTimer = useRef(null)
 
   const rate = rateOn(rates, today())
+  const notify = useCallback((m) => {
+    setToast(m)
+    clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToast(''), 2600)
+  }, [])
 
-  const addOrder = (o) => setOrders((os) => [withCosts(o, products, rates, cfg), ...os])
+  const addOrder = (o) => {
+    const full = withCosts({ ...o, trackCode: newTrackCode(), statusAt: new Date().toISOString() }, products, rates, cfg)
+    setOrders((os) => [full, ...os])
+    return { id: full.id, trackCode: full.trackCode }
+  }
 
-  const patchOrder = (id, patch) =>
+  const patchOrder = useCallback((id, patch) =>
     setOrders((os) => os.map((o) => {
       if (o.id !== id) return o
       const n = { ...o, ...patch }
+      if (patch.status && normStatus(patch.status) !== normStatus(o.status)) n.statusAt = new Date().toISOString()
       if (patch.status === 'Hoàn thành' && !n.deliveredAt) n.deliveredAt = today()
       return n
-    }))
+    })), [setOrders])
+
+  const sh = useShipping(patchOrder)
+  const shown = orders.filter((o) => orderMatches(o, q))
+  const ctx = { products, shop, sh, patchOrder, onBill: setBill, notify, onEdit: (o) => setModal({ edit: o.id }) }
+
+  // Mã vận đơn TQ: nhận diện khi dán hoặc khi bấm nút, rồi gợi ý gán vào đơn chờ gần nhất
+  const ordersRef = useRef(orders)
+  useEffect(() => { ordersRef.current = orders }, [orders])
+  const detect = useCallback((text, manual) => {
+    const hit = detectCnTracking(text)
+    if (!hit) return manual && notify('Không thấy mã vận đơn TQ trong nội dung đã copy')
+    const o = nearestWaitingOrder(ordersRef.current)
+    if (!o) return notify(`Mã ${hit.code} (${hit.carrier}) nhưng không còn đơn nào đang chờ gán`)
+    setSuggest({ ...hit, orderId: o.id })
+  }, [notify])
+  const readClipboard = async () => {
+    try { detect(await navigator.clipboard.readText(), true) } catch { notify('Trình duyệt chặn đọc clipboard, hãy dán (Ctrl+V) vào trang') }
+  }
+  const assign = () => {
+    const o = orders.find((x) => x.id === suggest.orderId)
+    if (o) patchOrder(o.id, { cnTracking: suggest.code, cnCarrier: suggest.carrier, status: normStatus(o.status) === 'Mới' ? 'Đã mua' : o.status })
+    notify(`Đã gán ${suggest.code} vào đơn ${suggest.orderId}`)
+    setSuggest(null)
+  }
+
+  // Phím tắt: Ctrl/Alt+N tạo đơn, Ctrl+F tìm khách, Ctrl+S lưu đơn đang mở, Esc đóng
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') { setModal(null); return }
+      if (!(e.ctrlKey || e.metaKey || e.altKey)) return
+      const k = e.key.toLowerCase()
+      if (k === 'n') { e.preventDefault(); setModal('new') }
+      else if (k === 'f' && !e.altKey) {
+        e.preventDefault()
+        setTab((t) => (t === 'work' || t === 'orders' ? t : 'orders'))
+        setTimeout(() => { searchRef.current?.focus(); searchRef.current?.select() }, 0)
+      } else if (k === 's' && !e.altKey) {
+        e.preventDefault()
+        document.querySelector('.modal form, form#order-form')?.requestSubmit()
+      }
+    }
+    const onPaste = (e) => {
+      const t = e.target
+      if (t.closest?.('input,textarea,select,[contenteditable]')) return
+      detect(e.clipboardData?.getData('text') || '')
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('paste', onPaste)
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('paste', onPaste) }
+  }, [detect])
+
+  const editing = modal?.edit && orders.find((o) => o.id === modal.edit)
+  const sug = suggest && orders.find((o) => o.id === suggest.orderId)
 
   return (
     <div className="app">
       <header>
         <b className="logo">TaobaoPro</b>
         <nav>
-          {TABS.map((t) => (
-            <button key={t} className={t === tab ? 'active' : ''} onClick={() => { setTab(t); if (t === TABS[3]) clearNew() }}>
-              {t}{t === TABS[3] && newCount > 0 && <span className="new-dot">{newCount}</span>}
+          {TABS.map(([id, t]) => (
+            <button key={id} className={id === tab ? 'active' : ''} onClick={() => { setTab(id); if (id === 'orders' || id === 'work') clearNew() }}>
+              {t}{id === 'orders' && newCount > 0 && <span className="new-dot">{newCount}</span>}
             </button>
           ))}
         </nav>
+        <input ref={searchRef} className="search" type="search" placeholder="Tìm khách… (Ctrl+F)" value={q} onChange={(e) => setQ(e.target.value)} />
+        <button className="primary" onClick={() => setModal('new')} title="Ctrl+N hoặc Alt+N">＋ Đơn mới</button>
+        <button className="icon-btn" onClick={readClipboard} title="Dán mã vận đơn TQ từ clipboard">📋</button>
         <span className="muted">1¥ = {vnd(rate)}</span>
         <a className="shop-link" href="/order" target="_blank" rel="noreferrer">🛍 Trang khách</a>
         <ThemeToggle dark={dark} setDark={setDark} />
         <button className="logout" onClick={logout}>Đăng xuất</button>
       </header>
+      {suggest && sug && (
+        <div className="suggest">
+          <span>📦 Phát hiện mã vận đơn TQ <b>{suggest.code}</b> ({suggest.carrier}). Gán vào đơn <b>{sug.id}</b> — {sug.customer.name}?</span>
+          <button className="primary" onClick={assign}>Gán</button>
+          <button onClick={() => setSuggest(null)}>Bỏ qua</button>
+        </div>
+      )}
       <main>
-        {tab === TABS[0] && <Dashboard products={products} orders={orders} rate={rate} cfg={cfg} />}
-        {tab === TABS[1] && <Catalog products={products} setProducts={setProducts} rate={rate} cfg={cfg} />}
-        {tab === TABS[2] && <Links products={products} setProducts={setProducts} rate={rate} cfg={cfg} />}
-        {tab === TABS[3] && <Orders orders={orders} patchOrder={patchOrder} />}
-        {tab === TABS[4] && <Pricing rates={rates} setRates={setRates} cfg={cfg} setCfg={setCfg} orders={orders} setOrders={setOrders} />}
-        {tab === TABS[5] && (
+        {tab === 'work' && <Workspace layouts={layouts} setLayouts={setLayouts} orders={shown} setOrders={setOrders} rate={rate} cfg={cfg} {...ctx} />}
+        {tab === 'stats' && <Dashboard products={products} orders={orders} rate={rate} cfg={cfg} />}
+        {tab === 'catalog' && <Catalog products={products} setProducts={setProducts} rate={rate} cfg={cfg} />}
+        {tab === 'links' && <Links products={products} setProducts={setProducts} rate={rate} cfg={cfg} />}
+        {tab === 'orders' && <Orders orders={shown} ctx={ctx} />}
+        {tab === 'scan' && <Scan orders={orders} patchOrder={patchOrder} />}
+        {tab === 'pricing' && <Pricing rates={rates} setRates={setRates} cfg={cfg} setCfg={setCfg} orders={orders} setOrders={setOrders} />}
+        {tab === 'shop' && <ShopSettings shop={shop} setShop={setShop} products={products} notify={notify} />}
+        {tab === 'form' && (
           <div className="grid2 top">
-            <OrderForm products={products} onSubmit={addOrder} />
+            <OrderForm products={products} onSubmit={addOrder} smart />
             <ChatBox products={products} />
           </div>
         )}
       </main>
+
+      {modal === 'new' && (
+        <div className="modal" onClick={(e) => e.target === e.currentTarget && setModal(null)}>
+          <div className="modal-box">
+            <OrderForm products={products} onSubmit={(o) => { const r = addOrder(o); notify(`Đã tạo đơn ${r.id}`); setModal(null); return r }} smart />
+            <button onClick={() => setModal(null)}>Đóng (Esc)</button>
+          </div>
+        </div>
+      )}
+      {editing && <EditOrder o={editing} onClose={() => setModal(null)} onSave={(p) => { patchOrder(editing.id, p); setModal(null) }} />}
+      {bill && <Bill order={bill} shop={shop} onClose={() => setBill(null)} />}
+      {toast && <div className="toast">{toast}</div>}
+    </div>
+  )
+}
+
+function EditOrder({ o, onClose, onSave }) {
+  const [f, setF] = useState({ note: o.note || '', cnTracking: o.cnTracking || '', cnCarrier: o.cnCarrier || '', deposit: o.deposit || 0 })
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
+  return (
+    <div className="modal" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <form className="modal-box card" onSubmit={(e) => { e.preventDefault(); onSave({ ...f, deposit: Number(f.deposit) || 0 }) }}>
+        <h3>Sửa đơn {o.id}</h3>
+        <label>Mã vận đơn TQ<input value={f.cnTracking} onChange={set('cnTracking')} /></label>
+        <label>Hãng TQ<input value={f.cnCarrier} onChange={set('cnCarrier')} placeholder="YTO, ZTO, STO…" /></label>
+        <label>Tiền cọc (đ)<input type="number" min="0" value={f.deposit} onChange={set('deposit')} /></label>
+        <label>Ghi chú<textarea rows="3" value={f.note} onChange={set('note')} /></label>
+        <div className="row"><button className="primary">Lưu (Ctrl+S)</button><button type="button" onClick={onClose}>Hủy</button></div>
+      </form>
     </div>
   )
 }
 
 /* ---------- Dashboard ---------- */
 function Dashboard({ products, orders, rate, cfg }) {
-  const done = orders.filter((o) => o.status === 'Hoàn thành')
-  const byMonth = {}
-  const byCat = {}
-  done.forEach((o) => {
-    const t = orderTotals(o)
-    const m = (o.deliveredAt || o.createdAt).slice(0, 7)
-    byMonth[m] = byMonth[m] || { revenue: 0, profit: 0 }
-    byMonth[m].revenue += t.revenue
-    byMonth[m].profit += t.profit
-    o.items.forEach((i) => {
-      const p = products.find((x) => x.id === i.productId)
-      const c = p?.category || 'Khác'
-      byCat[c] = (byCat[c] || 0) + i.price * i.qty
-    })
-  })
-  const months = Object.keys(byMonth).sort().map((m) => ({ label: m, ...byMonth[m] }))
-  const cats = Object.entries(byCat).map(([label, value]) => ({ label, value }))
-
-  const now = new Date()
-  const q = Math.floor(now.getMonth() / 3)
-  const taxQuarter = done
-    .filter((o) => {
-      const d = new Date(o.deliveredAt || o.createdAt)
-      return d.getFullYear() === now.getFullYear() && Math.floor(d.getMonth() / 3) === q && !o.taxPaid
-    })
-    .reduce((s, o) => s + orderTotals(o).tax, 0)
-  const old = products.filter((p) => p.status === 'READY' && p.stock > 0 && daysAgo(p.createdAt) > 30)
-  const stuck = products.filter((p) => p.status === 'TQ').reduce((s, p) => s + p.stock * costVnd(p, rate, cfg), 0)
-
+  const s = dashboardStats(products, orders, rate, cfg)
   return (
     <>
-      <div className="cards">
-        <Metric title="Tồn quá 30 ngày" value={`${old.length} mẫu / ${old.reduce((s, p) => s + p.stock, 0)} sp`} warn={old.length > 0} />
-        <Metric title="Giá trị hàng kẹt kho TQ" value={vnd(stuck)} />
-        <Metric title="Thuế cần nộp trong quý" value={vnd(taxQuarter)} />
-        <Metric title="Công nợ COD chờ thu" value={vnd(orders.filter((o) => ['Đã xác nhận', 'Đang giao'].includes(o.status)).reduce((s, o) => s + orderTotals(o).cod, 0))} />
-      </div>
+      <Metrics s={s} />
       <div className="grid2">
-        <div className="card"><h3>Doanh thu & Lợi nhuận ròng theo tháng</h3><BarChart data={months} /></div>
-        <div className="card"><h3>Tỷ trọng doanh thu theo danh mục</h3><PieChart data={cats} /></div>
+        <div className="card"><h3>Doanh thu & Lợi nhuận ròng theo tháng</h3><BarChart data={s.months} /></div>
+        <div className="card"><h3>Tỷ trọng doanh thu theo danh mục</h3><PieChart data={s.cats} /></div>
       </div>
     </>
-  )
-}
-
-const Metric = ({ title, value, warn }) => (
-  <div className={'card metric' + (warn ? ' warn' : '')}><span className="muted">{title}</span><b>{value}</b></div>
-)
-
-function BarChart({ data }) {
-  if (!data.length) return <p className="muted">Chưa có đơn hoàn thành.</p>
-  const max = Math.max(...data.flatMap((d) => [d.revenue, d.profit, 1]))
-  const W = 480, H = 220, bw = Math.min(30, W / data.length / 3)
-  return (
-    <svg viewBox={`0 0 ${W} ${H + 30}`} width="100%">
-      {data.map((d, i) => {
-        const x = (i + 0.5) * (W / data.length)
-        const h1 = (d.revenue / max) * H
-        const h2 = (Math.max(d.profit, 0) / max) * H
-        return (
-          <g key={d.label}>
-            <rect x={x - bw} y={H - h1} width={bw} height={h1} fill="#3b82f6"><title>Doanh thu {vnd(d.revenue)}</title></rect>
-            <rect x={x} y={H - h2} width={bw} height={h2} fill="#10b981"><title>Lợi nhuận {vnd(d.profit)}</title></rect>
-            <text x={x} y={H + 16} textAnchor="middle" fontSize="11">{d.label}</text>
-          </g>
-        )
-      })}
-      <text x="4" y={H + 28} fontSize="11" fill="#3b82f6">■ Doanh thu</text>
-      <text x="100" y={H + 28} fontSize="11" fill="#10b981">■ Lợi nhuận ròng</text>
-    </svg>
-  )
-}
-
-function PieChart({ data }) {
-  const total = data.reduce((s, d) => s + d.value, 0)
-  if (!total) return <p className="muted">Chưa có dữ liệu.</p>
-  let acc = -Math.PI / 2
-  const starts = data.map((d) => {
-    const s = acc
-    acc += (d.value / total) * Math.PI * 2
-    return s
-  })
-  return (
-    <div className="row">
-      <svg viewBox="-1 -1 2 2" width="180" height="180">
-        {data.map((d, i) => {
-          const a = starts[i]
-          const ang = (d.value / total) * Math.PI * 2
-          const [x1, y1, x2, y2] = [Math.cos(a), Math.sin(a), Math.cos(a + ang), Math.sin(a + ang)]
-          const path = data.length === 1
-            ? <circle r="1" fill={COLORS[0]} />
-            : <path d={`M0 0 L${x1} ${y1} A1 1 0 ${ang > Math.PI ? 1 : 0} 1 ${x2} ${y2}Z`} fill={COLORS[i % COLORS.length]} />
-          return <g key={d.label}>{path}</g>
-        })}
-      </svg>
-      <ul className="legend">
-        {data.map((d, i) => (
-          <li key={d.label}><span style={{ background: COLORS[i % COLORS.length] }} />{d.label}: {((d.value / total) * 100).toFixed(1)}%</li>
-        ))}
-      </ul>
-    </div>
   )
 }
 
@@ -268,74 +300,53 @@ function Catalog({ products, setProducts, rate, cfg }) {
   )
 }
 
-/* ---------- Orders & logistics ---------- */
-function Orders({ orders, patchOrder }) {
-  const [busy, setBusy] = useState('')
-  const [carrier, setCarrier] = useState('GHN')
-  const [pkg, setPkg] = useState({ weightKg: 1, length: 30, width: 20, height: 10 })
-  const [mock, setMock] = useState(true)
-  const [token, setToken] = useState('')
-  const [err, setErr] = useState('')
-
-  const ship = async (o) => {
-    setBusy(o.id)
-    setErr('')
-    try {
-      const payload = buildShipment(o, orderTotals(o), pkg)
-      const r = await createShipment(carrier, payload, { mock, token })
-      patchOrder(o.id, { status: 'Đang giao', carrier, tracking: r.trackingId, waybillUrl: r.waybillUrl })
-    } catch (e) {
-      setErr(e.message)
-    }
-    setBusy('')
-  }
-  // Giả lập webhook bằng chính mapWebhook mà endpoint backend sẽ dùng
-  const simulateWebhook = (o) => {
-    const m = mapWebhook({ OrderCode: o.tracking, status: 'delivered' })
-    if (m.trackingId === o.tracking) patchOrder(o.id, { status: m.status })
-  }
+/* ---------- Orders ---------- */
+function Orders({ orders, ctx }) {
+  const [view, setView] = useState('kanban')
+  const { sh, patchOrder, onBill, notify } = ctx
 
   return (
     <>
-      <div className="card">
-        <h3>Cấu hình giao hàng</h3>
-        <div className="row wrap">
-          <label>Hãng<select value={carrier} onChange={(e) => setCarrier(e.target.value)}>{CARRIERS.map((c) => <option key={c}>{c}</option>)}</select></label>
-          {['weightKg', 'length', 'width', 'height'].map((k) => (
-            <label key={k}>{{ weightKg: 'Cân (kg)', length: 'Dài', width: 'Rộng', height: 'Cao' }[k]}
-              <input type="number" step="0.1" value={pkg[k]} onChange={(e) => setPkg({ ...pkg, [k]: +e.target.value })} /></label>
-          ))}
-          <label><input type="checkbox" checked={mock} onChange={(e) => setMock(e.target.checked)} /> Chế độ giả lập</label>
-          {!mock && <label>API Token<input value={token} onChange={(e) => setToken(e.target.value)} /></label>}
-        </div>
-        <small className="muted">Webhook: cấu hình <code>https://yourdomain.com{CARRIER_CONFIG[carrier].webhook}</code> tại {carrier}; backend gọi <code>mapWebhook()</code> trong logistics.js để cập nhật trạng thái.</small>
-        {err && <p className="err">{err}</p>}
+      <div className="row wrap layout-bar">
+        <button className={view === 'kanban' ? 'on' : ''} onClick={() => setView('kanban')}>Kanban</button>
+        <button className={view === 'table' ? 'on' : ''} onClick={() => setView('table')}>Bảng</button>
       </div>
-      <table>
-        <thead><tr><th>Mã</th><th>Khách</th><th>Hàng</th><th>Tổng</th><th>Cọc</th><th>COD</th><th>Trạng thái</th><th>Vận đơn</th><th /></tr></thead>
-        <tbody>
-          {orders.map((o) => {
-            const t = orderTotals(o)
-            return (
-              <tr key={o.id}>
-                <td>{o.id}<br /><small>{o.createdAt}</small></td>
-                <td>{o.customer.name}<br /><small>{o.customer.phone}</small><br /><small>{fullAddress(o.customer)}</small></td>
-                <td>{o.items.map((i) => `${i.name} (${i.size}/${i.color}) x${i.qty}`).join('; ')}</td>
-                <td>{vnd(t.revenue)}</td>
-                <td>{vnd(o.deposit)}</td>
-                <td>{vnd(t.cod)}</td>
-                <td><select value={o.status} onChange={(e) => patchOrder(o.id, { status: e.target.value })}>{ORDER_STATUS.map((s) => <option key={s}>{s}</option>)}</select></td>
-                <td>{o.tracking ? <>{o.carrier}: {o.tracking}<br /><a href={o.waybillUrl} target="_blank" rel="noreferrer">In tem</a></> : '—'}</td>
-                <td>
-                  {!o.tracking && ['Mới', 'Đã xác nhận'].includes(o.status) && <button className="primary" disabled={busy === o.id} onClick={() => ship(o)}>{busy === o.id ? '…' : 'Giao hàng'}</button>}
-                  {o.tracking && o.status === 'Đang giao' && <button onClick={() => simulateWebhook(o)}>Giả lập webhook "đã giao"</button>}
-                </td>
-              </tr>
-            )
-          })}
-          {!orders.length && <tr><td colSpan="9" className="muted">Chưa có đơn. Tạo ở tab "Đặt hàng & Tư vấn".</td></tr>}
-        </tbody>
-      </table>
+      <ShippingConfig sh={sh} />
+      {view === 'kanban' && <Kanban orders={orders} {...ctx} />}
+      {view === 'table' && (
+        <div className="tablewrap">
+          <table>
+            <thead><tr><th>Mã</th><th>Khách</th><th>Hàng</th><th>Tổng</th><th>Cọc</th><th>COD</th><th>Trạng thái</th><th>Vận đơn</th><th /></tr></thead>
+            <tbody>
+              {orders.map((o) => {
+                const t = orderTotals(o)
+                return (
+                  <tr key={o.id}>
+                    <td>{o.id}<br /><small>{o.createdAt}</small></td>
+                    <td>{o.customer.name}<br /><small>{o.customer.phone}</small><br /><small>{fullAddress(o.customer)}</small></td>
+                    <td>{o.items.map((i) => `${i.name} (${i.size}/${i.color}) x${i.qty}`).join('; ')}</td>
+                    <td>{vnd(t.revenue)}</td>
+                    <td>{vnd(o.deposit)}</td>
+                    <td>{vnd(t.cod)}</td>
+                    <td><select value={normStatus(o.status)} onChange={(e) => patchOrder(o.id, { status: e.target.value })}>{ORDER_STATUS.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}</select></td>
+                    <td>
+                      {o.cnTracking && <small>TQ: {o.cnTracking}<br /></small>}
+                      {o.tracking ? <>{o.carrier}: {o.tracking}<br /><a href={o.waybillUrl} target="_blank" rel="noreferrer">In tem</a></> : '—'}
+                    </td>
+                    <td>
+                      <button onClick={() => onBill(o)}>🧾 Bill</button>
+                      {!o.tracking && !['Hoàn thành', 'Đã hủy'].includes(o.status) && <button className="primary" disabled={sh.busy === o.id} onClick={() => sh.ship(o)}>{sh.busy === o.id ? '…' : 'Giao hàng'}</button>}
+                      {o.tracking && o.status === 'Đang giao' && <button onClick={() => sh.simulateWebhook(o)}>Giả lập "đã giao"</button>}
+                      {o.trackCode && <button onClick={() => navigator.clipboard.writeText(`${location.origin}/track/${o.trackCode}`).then(() => notify('Đã copy link theo dõi'))}>🔗</button>}
+                    </td>
+                  </tr>
+                )
+              })}
+              {!orders.length && <tr><td colSpan="9" className="muted">Chưa có đơn. Bấm "＋ Đơn mới" hoặc Ctrl+N.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
     </>
   )
 }

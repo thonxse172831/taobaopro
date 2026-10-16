@@ -8,6 +8,7 @@ export async function openDb(uri, dbName = 'taobaopro') {
   const kv = db.collection('kv')
   const orders = db.collection('orders')
   await orders.createIndex({ tracking: 1 }, { sparse: true })
+  await orders.createIndex({ trackCode: 1 }, { sparse: true })
   await orders.createIndex({ createdAt: -1, insertedAt: -1 })
   const now = () => new Date().toISOString()
 
@@ -18,9 +19,10 @@ export async function openDb(uri, dbName = 'taobaopro') {
     listOrders: async () => (await orders.find().sort({ createdAt: -1, insertedAt: -1 }).toArray()).map((r) => r.data),
     getOrder: async (id) => (await orders.findOne({ _id: id }))?.data,
     orderByTracking: async (t) => (await orders.findOne({ tracking: t }))?.data,
+    orderByTrackCode: async (c) => (await orders.findOne({ trackCode: c }))?.data,
     saveOrder: async (o) => {
       await orders.updateOne({ _id: o.id }, {
-        $set: { data: o, status: o.status || '', tracking: o.tracking || null, createdAt: o.createdAt || now().slice(0, 10), updatedAt: now() },
+        $set: { data: o, status: o.status || '', tracking: o.tracking || null, trackCode: o.trackCode || null, createdAt: o.createdAt || now().slice(0, 10), updatedAt: now() },
         $setOnInsert: { insertedAt: now() },
       }, { upsert: true })
     },
