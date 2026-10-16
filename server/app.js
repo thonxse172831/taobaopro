@@ -1,0 +1,208 @@
+import crypto from 'node:crypto'
+import path from 'node:path'
+import fs from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import express from 'express'
+import helmet from 'helmet'
+import compression from 'compression'
+import rateLimit from 'express-rate-limit'
+import { openDb } from './db.js'
+import { createAuth } from './auth.js'
+import { withCosts, normalizeCfg, DEFAULT_PRICING, SEED_PRODUCTS } from '../src/lib.js'
+import { mapWebhook } from '../src/logistics.js'
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const KV_KEYS = new Set(['products', 'rates', 'pricing', 'links', 'linkcfg'])
+const CARRIERS = new Set(['ghn', 'spx', 'jt', 'viettelpost'])
+const PUBLIC_FIELDS = ['id', 'name', 'image', 'sizes', 'colors', 'tags', 'category', 'priceVnd', 'stock', 'status', 'createdAt']
+
+// Kênh đẩy tin tức thời (Server-Sent Events): 'admin' và 'public'
+const channels = { admin: new Set(), public: new Set() }
+const broadcast = (ch, event) => { for (const res of channels[ch]) res.write(`event: ${event}\ndata: ${Date.now()}\n\n`) }
+const heartbeat = setInterval(() => { for (const set of Object.values(channels)) for (const res of set) res.write(': ping\n\n') }, 25000)
+heartbeat.unref()
+const openStream = (ch) => (req, res) => {
+  res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
+  res.flushHeaders()
+  res.write('retry: 3000\n\n')
+  channels[ch].add(res)
+  req.on('close', () => channels[ch].delete(res))
+}
+
+const clip = (v, n) => String(v ?? '').trim().slice(0, n)
+const vnToday = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10)
+const newId = () => 'DH' + crypto.randomBytes(4).toString('hex').toUpperCase()
+
+export async function createApp(env = process.env) {
+  const prod = env.NODE_ENV === 'production'
+  const password = env.ADMIN_PASSWORD || (prod ? '' : 'admin123')
+  if (!password) throw new Error('Thiếu biến môi trường ADMIN_PASSWORD (bắt buộc khi chạy production)')
+  if (!env.ADMIN_PASSWORD) console.warn('[cảnh báo] Đang dùng mật khẩu admin mặc định "admin123" (chỉ dành cho dev)')
+  const secret = env.SESSION_SECRET || crypto.createHash('sha256').update('tb-session:' + password).digest('hex')
+  const distDir = path.join(ROOT, 'dist')
+
+  const db = await openDb(env.MONGODB_URI, env.MONGODB_DB || 'taobaopro')
+  const auth = createAuth({ password, secret })
+
+  if ((await db.getKv('products')) === undefined) await db.setKv('products', SEED_PRODUCTS)
+  if ((await db.getKv('rates')) === undefined) await db.setKv('rates', [{ date: '2026-01-01', rate: 3600 }])
+  if ((await db.getKv('pricing')) === undefined) await db.setKv('pricing', DEFAULT_PRICING)
+
+  const app = express()
+  app.disable('x-powered-by')
+  if (env.TRUST_PROXY) app.set('trust proxy', Number(env.TRUST_PROXY) || env.TRUST_PROXY)
+
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https:', 'http:'],
+        connectSrc: ["'self'", 'https:', 'http:'],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        upgradeInsecureRequests: null,
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+  }))
+  app.use(compression({ filter: (req, res) => !req.path.endsWith('/events') && compression.filter(req, res) }))
+  app.use(express.json({ limit: '8mb' }))
+
+  const api = express.Router()
+
+  // Chặn CSRF: yêu cầu ghi phải cùng origin
+  api.use((req, res, next) => {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || req.path.startsWith('/webhook/')) return next()
+    const origin = req.headers.origin
+    if (!origin || req.headers['sec-fetch-site'] === 'same-origin') return next()
+    let host
+    try { host = new URL(origin).host } catch { return res.status(403).json({ error: 'Origin không hợp lệ' }) }
+    const fwd = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim()
+    const allowed = new Set([req.headers.host, fwd, ...String(env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim().replace(/^https?:\/\//, '').replace(/\/$/, ''))].filter(Boolean))
+    if (!allowed.has(host)) return res.status(403).json({ error: 'Origin không hợp lệ' })
+    next()
+  })
+
+  api.get('/health', (req, res) => res.json({ ok: true }))
+
+  // ---------- Đăng nhập admin ----------
+  const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Thử lại sau 15 phút' } })
+  api.post('/auth/login', loginLimit, (req, res) => {
+    if (!auth.checkPassword(req.body?.password)) return res.status(401).json({ error: 'Sai mật khẩu' })
+    auth.setCookie(req, res)
+    res.json({ ok: true })
+  })
+  api.post('/auth/logout', (req, res) => { auth.clearCookie(res); res.json({ ok: true }) })
+  api.get('/auth/me', (req, res) => res.json({ authed: auth.isAuthed(req) }))
+
+  // ---------- Khách: xem mẫu & đặt hàng ----------
+  api.get('/public/events', openStream('public'))
+  api.get('/public/catalog', async (req, res) => {
+    const products = ((await db.getKv('products')) || []).map((p) => Object.fromEntries(PUBLIC_FIELDS.map((k) => [k, p[k]])))
+    res.set('Cache-Control', 'public, max-age=30').json({ products })
+  })
+
+  const orderLimit = rateLimit({ windowMs: 60 * 60 * 1000, limit: 15, standardHeaders: true, legacyHeaders: false, message: { error: 'Bạn đặt quá nhiều đơn, vui lòng thử lại sau' } })
+  api.post('/public/orders',   orderLimit, async (req, res) => {
+    const b = req.body || {}
+    const c = b.customer || {}
+      const products = (await db.getKv('products')) || []
+    const customer = {
+      name: clip(c.name, 100), phone: clip(c.phone, 20).replace(/[\s.-]/g, ''),
+      province: clip(c.province, 100), district: clip(c.district, 100), ward: clip(c.ward, 100),
+      address: clip(c.address, 200), addressMode: c.addressMode === 'old' ? 'old' : 'new',
+    }
+    if (!customer.name) return res.status(400).json({ error: 'Vui lòng nhập họ tên' })
+    if (!/^(\+?84|0)\d{8,10}$/.test(customer.phone)) return res.status(400).json({ error: 'Số điện thoại không hợp lệ' })
+    if (!customer.province || !customer.ward || !customer.address) return res.status(400).json({ error: 'Vui lòng nhập đầy đủ địa chỉ' })
+    if (customer.addressMode === 'old' && !customer.district) return res.status(400).json({ error: 'Vui lòng chọn Quận/Huyện' })
+    const raw = Array.isArray(b.items) ? b.items.slice(0, 20) : []
+    if (!raw.length) return res.status(400).json({ error: 'Đơn hàng trống' })
+
+    const items = []
+    for (const i of raw) {
+      const p = products.find((x) => x.id === i?.productId)
+      if (!p) return res.status(400).json({ error: 'Mẫu hàng không tồn tại' })
+      const qty = Math.min(99, Math.max(1, Math.floor(Number(i.qty)) || 1))
+      const size = p.sizes?.includes(i.size) ? i.size : p.sizes?.[0] || ''
+      const color = p.colors?.includes(i.color) ? i.color : p.colors?.[0] || ''
+      items.push({ productId: p.id, name: p.name, size, color, qty, price: p.priceVnd, cost: 0 })
+    }
+    const order = withCosts({
+      id: newId(), createdAt: vnToday(), status: 'Mới', deposit: 0, source: 'shop', customer, items,
+    }, products, (await db.getKv('rates')) || [], normalizeCfg(await db.getKv('pricing')))
+    await db.saveOrder(order)
+    broadcast('admin', 'orders')
+    res.status(201).json({ ok: true, id: order.id })
+  })
+
+  api.get('/public/orders/:id', rateLimit({ windowMs: 60 * 1000, limit: 20, standardHeaders: true,   legacyHeaders: false }), async (req, res) => {
+      const o = await db.getOrder(req.params.id)
+    const phone = clip(req.query.phone, 20).replace(/[\s.-]/g, '')
+    if (!o || !phone || o.customer?.phone !== phone) return res.status(404).json({ error: 'Không tìm thấy đơn' })
+    res.json({ id: o.id, status: o.status, createdAt: o.createdAt, carrier: o.carrier, tracking: o.tracking, items: o.items.map(({ name, size, color, qty, price }) => ({ name, size, color, qty, price })) })
+  })
+
+  // ---------- Webhook hãng vận chuyển ----------
+  api.post('/webhook/:carrier', async (req, res) => {
+    const expected = env.WEBHOOK_SECRET
+    if (!expected) return res.status(503).json({ error: 'Webhook chưa được bật (thiếu WEBHOOK_SECRET)' })
+    const given = String(req.headers['x-webhook-secret'] || req.query.secret || '')
+    const a = crypto.createHash('sha256').update(given).digest()
+    const e = crypto.createHash('sha256').update(expected).digest()
+    if (!crypto.timingSafeEqual(a, e)) return res.status(401).json({ error: 'Sai secret' })
+    if (!CARRIERS.has(req.params.carrier)) return res.status(404).json({ error: 'Hãng không hỗ trợ' })
+    const m = mapWebhook(req.body || {})
+    const o = m.trackingId && await db.orderByTracking(String(m.trackingId))
+    if (!o) return res.status(404).json({ error: 'Không thấy mã vận đơn' })
+    const next = { ...o, status: m.status }
+    if (m.status === 'Hoàn thành' && !next.deliveredAt) next.deliveredAt = vnToday()
+    await db.saveOrder(next)
+    broadcast('admin', 'orders')
+    res.json({ ok: true, id: o.id, status: next.status })
+  })
+
+  // ---------- Admin ----------
+  const admin = express.Router()
+  admin.use(auth.require)
+  admin.get('/events', openStream('admin'))
+  admin.get('/state', async (req, res) => res.json({ ...(await db.allKv()), orders: await db.listOrders() }))
+  admin.put('/state/:key', async (req, res) => {
+    if (!KV_KEYS.has(req.params.key)) return res.status(404).json({ error: 'Khóa không hợp lệ' })
+    if (req.body === undefined || !('value' in req.body)) return res.status(400).json({ error: 'Thiếu value' })
+    await db.setKv(req.params.key, req.body.value)
+    if (['products', 'rates', 'pricing'].includes(req.params.key)) broadcast('public', 'catalog')
+    res.json({ ok: true })
+  })
+  admin.get('/orders', async (req, res) => res.json(await db.listOrders()))
+  admin.put('/orders/:id', async (req, res) => {
+    const o = req.body
+    if (!o || o.id !== req.params.id || !o.customer || !Array.isArray(o.items)) return res.status(400).json({ error: 'Đơn không hợp lệ' })
+    await db.saveOrder(o)
+    broadcast('admin', 'orders')
+    res.json({ ok: true })
+  })
+  admin.delete('/orders/:id', async (req, res) => { await db.deleteOrder(req.params.id); broadcast('admin', 'orders'); res.json({ ok: true }) })
+  api.use('/admin', admin)
+
+  api.use((req, res) => res.status(404).json({ error: 'Không tìm thấy' }))
+  app.use('/api', api)
+
+  // ---------- Giao diện (bản build) ----------
+  if (fs.existsSync(distDir)) {
+    app.use('/assets', express.static(path.join(distDir, 'assets'), { immutable: true, maxAge: '1y' }))
+    app.use(express.static(distDir, { maxAge: '1h' }))
+    app.get(/^\/(?!api\/).*/, (req, res) => res.sendFile(path.join(distDir, 'index.html')))
+  }
+
+  app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
+    if (err.type === 'entity.too.large') return res.status(413).json({ error: 'Dữ liệu quá lớn' })
+    if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'JSON không hợp lệ' })
+    console.error(err)
+    res.status(500).json({ error: 'Lỗi máy chủ' })
+  })
+
+  return { app, db }
+}
