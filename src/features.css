@@ -15,6 +15,35 @@ label.check{flex-direction:row;align-items:center;gap:8px;flex:1}
 textarea{width:100%;resize:vertical}
 .bookmarklet{display:inline-block;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;border-radius:999px;padding:10px 20px;text-decoration:none;cursor:grab}
 
+/* ===== Xác nhận đặt hàng thành công ===== */
+.order-success{max-width:620px;margin:24px auto;padding:clamp(20px,5vw,36px);text-align:center;overflow:hidden}
+.success-mark{width:68px;height:68px;margin:0 auto 14px}
+.success-mark svg{width:100%;height:100%}
+.success-mark circle{fill:var(--brand-soft);stroke:var(--brand);stroke-width:2}
+.success-mark path{stroke:var(--brand);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.success-eyebrow{font-size:11px;letter-spacing:.14em;font-weight:800;color:var(--ok)}
+.order-success h2{margin:8px 0;font-size:clamp(24px,5vw,32px);letter-spacing:-.04em}
+.success-copy{color:var(--muted);line-height:1.6;margin:0 auto 22px;max-width:420px}
+.success-order-id{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 16px;border:1px dashed var(--border);border-radius:14px;background:var(--surface2);text-align:left}
+.success-order-id span,.success-item-info span{color:var(--muted);font-size:13px}
+.success-order-id strong{font-variant-numeric:tabular-nums}
+.success-item{display:flex;align-items:center;gap:12px;padding:16px 0;border-bottom:1px solid var(--border);text-align:left}
+.success-item>img,.success-item-placeholder{width:58px;height:58px;flex:none;object-fit:cover;border-radius:13px;background:var(--surface2)}
+.success-item-placeholder{display:grid;place-items:center;font-size:24px}
+.success-item-info{display:grid;gap:5px;min-width:0;flex:1}
+.success-item-info strong{overflow:hidden;text-overflow:ellipsis}
+.success-total{white-space:nowrap;color:var(--brand);font-variant-numeric:tabular-nums}
+.success-next{display:flex;gap:12px;align-items:center;text-align:left;padding:14px;margin:18px 0;background:var(--brand-soft);border-radius:14px}
+.success-next-icon{font-size:22px}
+.success-next p{margin:0;color:var(--muted);font-size:13px;line-height:1.6}
+.success-next p strong{color:var(--text)}
+.success-actions{display:grid;gap:10px;margin-top:20px}
+.success-track,.success-again{min-height:46px;display:flex;justify-content:center;align-items:center;gap:8px;padding:11px 16px;border-radius:13px;text-decoration:none;font-weight:700}
+.success-track{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;box-shadow:0 4px 12px rgba(249,115,22,.24)}
+.success-again{background:var(--surface);color:var(--text)}
+.success-track:hover{color:#fff;filter:brightness(1.04)}
+@media(max-width:480px){.order-success{margin:12px 0;padding:22px 16px}.success-item{gap:9px}.success-item>img,.success-item-placeholder{width:48px;height:48px}.success-item-info strong{font-size:14px}.success-total{font-size:13px}}
+
 /* ===== Kanban ===== */
 .kanban{display:flex;gap:14px;overflow-x:auto;padding-bottom:12px;align-items:flex-start;scroll-snap-type:x proximity;margin-bottom:18px}
 .kcol{flex:0 0 280px;background:var(--surface2);border:2px dashed transparent;border-radius:20px;padding:12px;display:flex;flex-direction:column;gap:10px;min-height:140px;scroll-snap-align:start}

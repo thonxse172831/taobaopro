@@ -116,22 +116,72 @@ export function OrderForm({ products, onSubmit, pick, showDeposit = true, smart 
       return setErr(x.message || 'Không gửi được đơn, vui lòng thử lại')
     }
     setBusy(false)
-    setDone({ id: (typeof res === 'string' ? res : res?.id) || order.id, trackCode: res?.trackCode })
+    setDone({
+      id: (typeof res === 'string' ? res : res?.id) || order.id,
+      trackCode: res?.trackCode,
+      productName: p.name,
+      image: p.image,
+      qty: Math.max(1, Number(f.qty) || 1),
+      total: (p.priceVnd || 0) * Math.max(1, Number(f.qty) || 1),
+      customerName: f.name.trim(),
+    })
     setF({ ...blank, productId: f.productId })
     setAddr(EMPTY_ADDR)
     setPaste('')
     setPasteMsg('')
   }
 
+  if (done && !smart) {
+    return (
+      <section className="card order-success" id="order-form" aria-labelledby="order-success-title" role="status">
+        <div className="success-mark" aria-hidden="true">
+          <svg viewBox="0 0 48 48" fill="none">
+            <circle cx="24" cy="24" r="22" />
+            <path d="m14 24 7 7 14-15" />
+          </svg>
+        </div>
+        <span className="success-eyebrow">ĐẶT HÀNG THÀNH CÔNG</span>
+        <h2 id="order-success-title">Cảm ơn {done.customerName}!</h2>
+        <p className="success-copy">Shop đã nhận được đơn hàng của bạn và sẽ sớm liên hệ để xác nhận.</p>
+
+        <div className="success-order-id">
+          <span>Mã đơn hàng</span>
+          <strong>{done.id}</strong>
+        </div>
+
+        <div className="success-item">
+          {done.image
+            ? <img src={done.image} alt="" />
+            : <div className="success-item-placeholder" aria-hidden="true">🛍️</div>}
+          <div className="success-item-info">
+            <strong>{done.productName}</strong>
+            <span>Số lượng: {done.qty}</span>
+          </div>
+          <strong className="success-total">{vnd(done.total)}</strong>
+        </div>
+
+        <div className="success-next">
+          <span className="success-next-icon" aria-hidden="true">💬</span>
+          <p><strong>Tiếp theo</strong><br />Nhân viên sẽ gọi xác nhận đơn qua số điện thoại bạn đã cung cấp.</p>
+        </div>
+
+        <div className="success-actions">
+          {done.trackCode && (
+            <a className="success-track" href={`/track/${done.trackCode}`}>
+              Theo dõi đơn hàng <span aria-hidden="true">→</span>
+            </a>
+          )}
+          <button type="button" className="success-again" onClick={() => setDone(null)}>
+            Tiếp tục mua sắm
+          </button>
+        </div>
+      </section>
+    )
+  }
+
   return (
     <form className="card" onSubmit={submit} id="order-form">
       <h3>📝 {smart ? 'Tạo đơn mới' : 'Form đặt hàng'}</h3>
-      {done && (
-        <p className="ok">
-          ✅ Đã gửi đơn {done.id}. {smart ? '' : 'Shop sẽ liên hệ xác nhận qua SĐT của bạn!'}
-          {done.trackCode && <> <a href={`/track/${done.trackCode}`}>Theo dõi đơn hàng →</a></>}
-        </p>
-      )}
       {smart && (
         <div className="smartpaste">
           <label>⚡ Smart Paste — dán nguyên địa chỉ khách nhắn
