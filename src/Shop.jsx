@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { ChatBox, OrderForm } from './Customer'
 import { MyOrders, useAccount } from './Account'
-import { ThemeToggle, useTheme } from './ui'
+import { Brand, ThemeToggle, useTheme } from './ui'
 import { vnd, STOCK_STATUS, ETA } from './lib'
 
 // Trang dành cho khách: chỉ thấy giá bán, size, màu, thời gian nhận hàng (không có giá vốn)
@@ -42,7 +42,7 @@ export default function Shop() {
   return (
     <div className="app shop">
       <header>
-        <b className="logo">TN Shop</b>
+        <Brand />
         <span className="muted tagline" style={{ flex: 1 }}>Order hàng Taobao/1688 chính ngạch · giá rõ ràng</span>
         <ThemeToggle dark={dark} setDark={setDark} />
         {user === null && <button className="primary" onClick={() => { location.href = '/login' }}>Đăng nhập / Đăng ký</button>}

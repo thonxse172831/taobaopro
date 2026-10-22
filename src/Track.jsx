@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
-import { ThemeToggle, useTheme } from './ui'
+import { Brand, ThemeToggle, useTheme } from './ui'
 import { vnd } from './lib'
 
 const CARRIER_URL = {
@@ -23,7 +23,7 @@ export default function Track({ code }) {
   return (
     <div className="app shop track">
       <header>
-        <b className="logo">{o?.shop.name || 'TN Shop'}</b>
+        <Brand label={o?.shop.name || 'TN Shop'} />
         <span style={{ flex: 1 }} />
         <ThemeToggle dark={dark} setDark={setDark} />
       </header>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
-import { ThemeToggle, useTheme } from './ui'
+import { Brand, ThemeToggle, useTheme } from './ui'
 import { vnd } from './lib'
 
 export function useAccount() {
@@ -65,9 +65,10 @@ export function LoginPage() {
     <div className="login">
       <div style={{ width: '100%', maxWidth: 380 }}>
         <div className="row" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
-          <b className="logo">TN Shop</b>
+          <Brand />
           <ThemeToggle dark={dark} setDark={setDark} />
         </div>
+        <Brand full />
         <AuthForm onDone={done} />
         <p style={{ textAlign: 'center' }}><a href="/order" className="muted">← Về trang mua sắm</a></p>
       </div>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from './api'
 import { loadAdminState } from './store'
 import { AuthForm } from './Account'
-import { ThemeToggle, useTheme } from './ui'
+import { Brand, ThemeToggle, useTheme } from './ui'
 
 export default function AdminGate({ children }) {
   const [state, setState] = useState('checking')
@@ -34,9 +34,10 @@ export default function AdminGate({ children }) {
     <div className="login">
       <div style={{ width: '100%', maxWidth: 380 }}>
         <div className="row" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
-          <b className="logo">TN Shop · Quản trị</b>
+          <Brand label="TN Shop · Quản trị" />
           <ThemeToggle dark={dark} setDark={setDark} />
         </div>
+        <Brand full />
         <AuthForm onDone={done} />
         {err && <p className="err">{err}</p>}
         <p style={{ textAlign: 'center' }}><a href="/order" className="muted">← Về trang khách</a></p>

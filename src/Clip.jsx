@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import AdminGate from './AdminGate'
 import { vnd } from './lib'
+import { Brand } from './ui'
 
 // Cửa sổ nhỏ do bookmarklet mở: đọc dữ liệu ở #hash và lưu vào thư viện mẫu
 function ClipInner() {
@@ -22,7 +23,7 @@ function ClipInner() {
   return (
     <div className="login">
       <div className="card login-card">
-        <b className="logo">TN Shop</b>
+        <Brand />
         {st.phase === 'saving' && <p>Đang lưu vào kho…</p>}
         {st.phase === 'err' && <p className="err">{st.msg}</p>}
         {st.phase === 'ok' && (

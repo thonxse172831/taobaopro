@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { NumInput, ThemeToggle, useTheme } from './ui'
+import { Brand, NumInput, ThemeToggle, useTheme } from './ui'
 import {
   vnd, today, uid, rateOn, costVnd, orderTotals, copyForCustomer, DEFAULT_PRICING, priceBreakdown, FEE_MODES,
   normalizeCfg, withCosts, fullAddress, STOCK_STATUS, ORDER_STATUS, STATUS_LABEL, normStatus, newTrackCode, SEED_PRODUCTS, DEFAULT_SHOP,
@@ -119,7 +119,7 @@ export default function App({ logout }) {
   return (
     <div className="app">
       <header>
-        <b className="logo">TN Shop</b>
+        <Brand />
         <nav>
           {TABS.map(([id, t]) => (
             <button key={id} className={id === tab ? 'active' : ''} onClick={() => { setTab(id); if (id === 'orders' || id === 'work') clearNew() }}>

@@ -38,3 +38,14 @@ export function useTheme() {
   }, [dark])
   return [dark, setDark]
 }
+
+// Logo thương hiệu: chỉ biểu tượng ở header, đầy đủ (kèm chữ THANH NGÂN) ở trang đăng nhập
+export function Brand({ full = false, label = 'TN Shop' }) {
+  if (full) return <img className="brand-full" src="/logo.png" alt="Thanh Ngân" />
+  return (
+    <span className="brand">
+      <img src="/logo-mark.png" alt="" />
+      <b className="logo">{label}</b>
+    </span>
+  )
+}
