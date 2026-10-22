@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { ChatBox, OrderForm } from './Customer'
+import ImageSearch from './ImageSearch.jsx'
 import { Brand, ThemeToggle, useTheme } from './ui'
 import { vnd, STOCK_STATUS, ETA } from './lib'
 
@@ -55,6 +56,8 @@ export default function Shop() {
             {tags.map((t) => <button key={t} className={tag === t ? 'on' : ''} onClick={() => setTag(t)}>#{t}</button>)}
           </div>
         </section>
+
+        <ImageSearch products={products} onSelect={buy} />
 
         <div className="products" id="catalog">
           {shown.map((p) => (

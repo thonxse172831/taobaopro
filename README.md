@@ -23,6 +23,7 @@ Giá bán, giá vốn của đơn khách luôn do server tính lại từ dữ l
 - **Kanban + Layout**: kéo thả trạng thái, lưu nhiều layout; thẻ "Đã mua" quá 5 ngày chuyển đỏ.
 - **Hotkeys**: Ctrl+S lưu, Ctrl+F tìm khách, Ctrl+N hoặc Alt+N đơn mới.
 - **Theo dõi đơn cho khách**: `/track/MÃ`.
+- **Tìm kiếm sản phẩm bằng ảnh**: khách chọn ảnh hoặc kéo thả trên trang shop; so khớp ngay trong trình duyệt với ảnh catalog (chịu được ảnh chụp màn hình, cắt viền, đổi độ sáng), không tải ảnh khách lên server. Ảnh mẫu ở domain ngoài được đọc qua `GET /api/public/img/:id`.
 - **Câu chốt đơn, Bill K80 + QR VietQR**, **quét mã vạch bằng camera** (cần HTTPS) và PWA (cài lên điện thoại).
 
 ## Chạy local

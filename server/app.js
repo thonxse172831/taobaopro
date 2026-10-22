@@ -165,6 +165,24 @@ export async function createApp(env = process.env) {
     res.set('Cache-Control', 'public, max-age=30').json({ products })
   })
 
+  // Chuyển tiếp ảnh mẫu ở domain ngoài (cùng origin) để trình duyệt đọc được pixel khi so khớp ảnh
+  api.get('/public/img/:id', async (req, res) => {
+    const p = ((await db.getKv('products')) || []).find((x) => x.id === req.params.id)
+    const url = httpsUrl(p?.image)
+    let host = ''
+    try { host = new URL(url).hostname } catch { /* không có ảnh */ }
+    if (!url || host === 'localhost' || /^[\d.]+$/.test(host) || host.includes(':')) return res.status(404).end()
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(8000), redirect: 'error' })
+      const type = r.headers.get('content-type') || ''
+      const buf = Buffer.from(await r.arrayBuffer())
+      if (!r.ok || !type.startsWith('image/') || buf.length > 6 * 1024 * 1024) return res.status(404).end()
+      res.set({ 'Content-Type': type, 'Cache-Control': 'public, max-age=86400' }).send(buf)
+    } catch {
+      res.status(404).end()
+    }
+  })
+
   const orderLimit = rateLimit({ windowMs: 60 * 60 * 1000, limit: 15, standardHeaders: true, legacyHeaders: false, message: { error: 'Bạn đặt quá nhiều đơn, vui lòng thử lại sau' } })
   api.post('/public/orders',   orderLimit, async (req, res) => {
     const b = req.body || {}
