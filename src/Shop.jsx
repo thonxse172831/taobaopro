@@ -9,10 +9,11 @@ import { vnd, STOCK_STATUS, ETA } from './lib'
 export default function Shop() {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
+  const [depositPct, setDepositPct] = useState(0)
 
   // Mẫu/giá do admin cập nhật sẽ hiện ngay, không cần tải lại trang
   useEffect(() => {
-    const load = () => api('/public/catalog').then((r) => setProducts(r.products)).catch(() => {}).finally(() => setLoading(false))
+    const load = () => api('/public/catalog').then((r) => { setProducts(r.products); setDepositPct(r.depositPct || 0) }).catch(() => {}).finally(() => setLoading(false))
     load()
     const es = new EventSource('/api/public/events')
     es.addEventListener('catalog', load)
@@ -74,7 +75,7 @@ export default function Shop() {
         </div>
 
         <div className="grid2 top" style={{ marginTop: 24 }}>
-          <OrderForm products={products} onSubmit={submit} pick={pick} showDeposit={false} />
+          <OrderForm products={products} onSubmit={submit} pick={pick} showDeposit={false} depositPct={depositPct} />
           <div className={'chat-wrap sticky' + (chatOpen ? ' open' : '')}>
             <button type="button" className="sheet-close" onClick={() => setChatOpen(false)}>✕ Đóng</button>
             <ChatBox products={products} onBuy={(id) => { setChatOpen(false); buy(id) }} />

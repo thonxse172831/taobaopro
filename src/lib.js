@@ -11,8 +11,9 @@ export const ETA = {
   READY: 'trong 1-3 ngày',
 }
 // Hành trình đơn (cột Kanban theo thứ tự)
-export const ORDER_STATUS = ['Mới', 'Đã mua', 'Kho TQ', 'Đang về', 'Kho VN', 'Đã xuất kho', 'Đang giao', 'Hoàn thành', 'Đã hủy']
+export const ORDER_STATUS = ['Chờ cọc', 'Mới', 'Đã mua', 'Kho TQ', 'Đang về', 'Kho VN', 'Đã xuất kho', 'Đang giao', 'Hoàn thành', 'Đã hủy']
 export const STATUS_LABEL = {
+  'Chờ cọc': 'Chờ khách chuyển cọc',
   'Mới': 'Chờ đặt hàng',
   'Đã mua': 'Đã mua · chờ kho TQ nhận',
   'Kho TQ': 'Đã tới kho TQ',
@@ -33,7 +34,7 @@ export const isStale = (o, now = Date.now()) => normStatus(o.status) === 'Đã m
 // Các bước khách nhìn thấy ở trang theo dõi
 export const TRACK_STEPS = ['Đã nhận đơn', 'Đang mua hàng', 'Đang về Việt Nam', 'Đang giao', 'Hoàn thành']
 export const trackStep = (status) =>
-  ({ 'Mới': 0, 'Đã mua': 1, 'Kho TQ': 1, 'Đang về': 2, 'Kho VN': 2, 'Đã xuất kho': 3, 'Đang giao': 3, 'Hoàn thành': 4 })[normStatus(status)] ?? 0
+  ({ 'Chờ cọc': 0, 'Mới': 0, 'Đã mua': 1, 'Kho TQ': 1, 'Đang về': 2, 'Kho VN': 2, 'Đã xuất kho': 3, 'Đang giao': 3, 'Hoàn thành': 4 })[normStatus(status)] ?? 0
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 export function newTrackCode(len = 8) {
@@ -54,7 +55,13 @@ export const DEFAULT_SHOP = {
 }
 export const TEMPLATE_VARS = ['ten', 'gia_te', 'gia_vnd', 'tien_coc', 'con_lai', 'size', 'mau', 'sl', 'ma_don', 'ten_khach', 'stk', 'link_track']
 
-export const fillTemplate = (tpl, vars) => String(tpl || '').replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m))
+// Tiền cọc = % tổng đơn, làm tròn nghìn đồng
+export const depositOf = (total, pct) => Math.round((total * Math.min(100, Math.max(0, Number(pct) || 0))) / 100 / 1000) * 1000
+// Chuyển khoản cọc tự động chỉ bật khi shop đã khai báo tài khoản nhận và tỷ lệ cọc > 0
+export const depositEnabled = (shop) => !!(shop?.bankBin && shop?.bankAccount && Number(shop?.depositPct) > 0)
+export const DEPOSIT_TTL_HOURS = 24
+
+export const fillTemplate =(tpl, vars) => String(tpl || '').replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m))
 
 // Biến cho câu chốt đơn từ một đơn hàng hoặc một mẫu
 export function templateVars({ product, order, shop, origin = '' }) {

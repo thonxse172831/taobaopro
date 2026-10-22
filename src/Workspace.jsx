@@ -23,7 +23,7 @@ export const DEFAULT_LAYOUTS = {
 
 const isUrgent = (o) => {
   const st = normStatus(o.status)
-  if (FINAL_STATUS.includes(st)) return false
+  if (FINAL_STATUS.includes(st) || st === 'Chờ cọc') return false
   return st === 'Mới' || isStale(o) || (st === 'Kho VN' && !o.tracking) || o.createdAt === today()
 }
 

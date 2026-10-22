@@ -12,6 +12,7 @@ import { useShipping, ShippingConfig } from './Shipping'
 import ShopSettings from './ShopSettings'
 import Scan from './Scan'
 import Bill from './Bill'
+import Payments from './Payments'
 import { BarChart, PieChart, Metrics, dashboardStats } from './charts'
 import { detectCnTracking, nearestWaitingOrder } from './track'
 import { useServerKV, useOrders } from './store'
@@ -66,6 +67,16 @@ export default function App({ logout }) {
   const sh = useShipping(patchOrder)
   const shown = orders.filter((o) => orderMatches(o, q))
   const ctx = { products, shop, sh, patchOrder, onBill: setBill, notify, onEdit: (o) => setModal({ edit: o.id }) }
+
+  // Báo cho shop khi đơn vừa đủ cọc (SePay xác nhận tự động)
+  const prevStatus = useRef(null)
+  useEffect(() => {
+    const prev = prevStatus.current
+    prevStatus.current = new Map(orders.map((o) => [o.id, o.status]))
+    if (!prev) return
+    const paid = orders.filter((o) => o.status === 'Mới' && o.paidAt && !o.paidManual && prev.get(o.id) !== 'Mới')
+    if (paid.length) notify(`💰 ${paid.map((o) => `${o.id} (${o.customer.name}) đã cọc ${vnd(o.depositPaid)}`).join(' · ')} — đơn chuyển sang "Chờ đặt hàng"`)
+  }, [orders, notify])
 
   // Mã vận đơn TQ: nhận diện khi dán hoặc khi bấm nút, rồi gợi ý gán vào đơn chờ gần nhất
   const ordersRef = useRef(orders)
@@ -144,6 +155,7 @@ export default function App({ logout }) {
         </div>
       )}
       <main>
+        {(tab === 'work' || tab === 'orders') && <Payments orders={orders} notify={notify} />}
         {tab === 'work' && <Workspace layouts={layouts} setLayouts={setLayouts} orders={shown} setOrders={setOrders} rate={rate} cfg={cfg} {...ctx} />}
         {tab === 'stats' && <Dashboard products={products} orders={orders} rate={rate} cfg={cfg} />}
         {tab === 'catalog' && <Catalog products={products} setProducts={setProducts} rate={rate} cfg={cfg} />}

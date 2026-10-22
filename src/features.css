@@ -118,3 +118,26 @@ hr{border:0;border-top:1px solid var(--border);margin:10px 0}
 .addr-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;font-size:13px;text-align:left}
 .addr-chip .tag{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--accent,#f97316);color:#fff}
 .addr-chip .tag.old{background:#64748b}
+
+/* Chuyển khoản cọc */
+.order-pay{max-width:620px;margin:24px auto;padding:clamp(20px,5vw,32px);text-align:center}
+.order-pay h2{margin:8px 0 6px;font-size:clamp(19px,4vw,24px)}
+.order-pay .success-again{margin-top:14px;border:1px solid var(--border);font-size:13px;color:var(--muted)}
+.deposit{display:flex;flex-direction:column;gap:14px;text-align:left}
+.deposit-qr{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
+.deposit-qr img,.deposit-qr-ph{width:min(240px,70vw);aspect-ratio:1;border-radius:16px;background:#fff;padding:8px;border:1px solid var(--border)}
+.deposit-qr-ph{display:flex;align-items:center;justify-content:center;color:#888;font-size:13px}
+.deposit-info{margin:0;display:flex;flex-direction:column;border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.deposit-info>div{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--border)}
+.deposit-info>div:last-child{border-bottom:0}
+.deposit-info dt{color:var(--muted);font-size:13px}
+.deposit-info dd{margin:0;display:flex;align-items:center;gap:8px;text-align:right;word-break:break-all}
+.deposit-info dd button{padding:4px 10px;font-size:12px;flex:none}
+.deposit-info .price{font-size:17px}
+.deposit-memo{color:var(--brand);letter-spacing:.04em}
+.deposit-wait{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;background:var(--brand-soft);font-weight:600;font-size:14px}
+.spinner{width:18px;height:18px;flex:none;border-radius:50%;border:3px solid color-mix(in srgb,var(--brand) 25%,transparent);border-top-color:var(--brand);animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.spinner{animation-duration:2.4s}}
+.deposit-note{margin:0 0 12px;padding:10px 14px;border-radius:12px;background:var(--brand-soft);font-size:14px}
+.deposit-line{color:var(--brand);font-size:12px;font-weight:700}

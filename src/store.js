@@ -6,13 +6,14 @@ let cache = {}
 export const loadAdminState = async () => { cache = await api('/admin/state') }
 
 // Một kết nối SSE dùng chung cho mọi hook
-const listeners = { orders: new Set(), state: new Set(), open: new Set() }
+const listeners = { orders: new Set(), state: new Set(), payments: new Set(), open: new Set() }
 let es
 function ensureStream() {
   if (es) return
   es = new EventSource('/api/admin/events')
   es.addEventListener('orders', () => listeners.orders.forEach((f) => f()))
   es.addEventListener('state', () => listeners.state.forEach((f) => f()))
+  es.addEventListener('payments', () => listeners.payments.forEach((f) => f()))
   es.onopen = () => listeners.open.forEach((f) => f())
 }
 function subscribe(ev, fn) {
@@ -50,6 +51,18 @@ export function useServerKV(key, initial) {
     } catch { /* mất mạng tạm thời */ }
   }), [key])
   return [v, set]
+}
+
+// Giao dịch ngân hàng SePay báo về (mới nhất trước), realtime qua SSE
+export function usePayments() {
+  const [list, setList] = useState([])
+  const reload = useCallback(() => api('/admin/payments').then(setList).catch(() => {}), [])
+  useEffect(() => {
+    reload()
+    const offs = [subscribe('payments', reload), subscribe('open', reload)]
+    return () => offs.forEach((f) => f())
+  }, [reload])
+  return { list, reload }
 }
 
 // Đơn hàng: ghi từng đơn (khách có thể đặt đơn mới bất kỳ lúc nào), realtime qua SSE

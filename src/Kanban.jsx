@@ -25,7 +25,15 @@ export function OrderCard({ o, products, shop, sh, patchOrder, onBill, notify, o
     if (!o.trackCode) return notify('Đơn này chưa có mã theo dõi')
     notify(await copyText(`${location.origin}/track/${o.trackCode}`) ? 'Đã copy link theo dõi cho khách' : 'Trình duyệt chặn clipboard')
   }
-  const canShip = !o.tracking && !FINAL_STATUS.includes(status)
+  const waitDeposit = status === 'Chờ cọc'
+  const canShip = !o.tracking && !FINAL_STATUS.includes(status) && !waitDeposit
+  // Shop tự kiểm tra tài khoản rồi xác nhận tay (khi chưa bật SePay hoặc khách ghi sai nội dung)
+  const confirmDeposit = () => {
+    const due = o.depositDue || 0
+    if (!confirm(`Xác nhận đã nhận đủ cọc ${vnd(due)} cho đơn ${o.id}?`)) return
+    const paid = Math.max(o.depositPaid || 0, due)
+    patchOrder(o.id, { status: 'Mới', depositPaid: paid, deposit: paid, paidAt: new Date().toISOString(), paidManual: true })
+  }
 
   return (
     <div
@@ -37,6 +45,8 @@ export function OrderCard({ o, products, shop, sh, patchOrder, onBill, notify, o
       <div>{o.customer.name} <small className="muted">{o.customer.phone}</small></div>
       <small className="muted">{o.items.map((i) => `${i.name} ${i.size}/${i.color} x${i.qty}`).join('; ')}</small>
       <div className="khead"><span>{vnd(t.revenue)}</span><small>COD {vnd(t.cod)}</small></div>
+      {waitDeposit && <div className="deposit-line">⏳ Chờ cọc {vnd(o.depositDue)}{o.depositPaid > 0 && ` · đã nhận ${vnd(o.depositPaid)}`}</div>}
+      {!waitDeposit && o.paidAt && <small className="ok">💰 Đã cọc {vnd(o.depositPaid)}{o.paidManual ? ' (xác nhận tay)' : ' (tự động)'}</small>}
       {stale && <div className="warn-line">⚠ Chờ kho TQ nhận quá {days} ngày — kiểm tra shop TQ / khiếu nại</div>}
       {o.cnTracking && <small>📦 {o.cnCarrier || 'TQ'}: {o.cnTracking}</small>}
       {o.tracking && <small>🚚 {o.carrier}: {o.tracking}</small>}
@@ -47,6 +57,7 @@ export function OrderCard({ o, products, shop, sh, patchOrder, onBill, notify, o
         <button title="Hóa đơn K80" onClick={() => onBill(o)}>🧾</button>
         {o.waybillUrl && <a className="btn-link" href={o.waybillUrl} target="_blank" rel="noreferrer" title="In tem">🏷</a>}
         {onEdit && <button title="Sửa ghi chú / mã vận đơn TQ" onClick={() => onEdit(o)}>✏️</button>}
+        {waitDeposit && <button className="primary" onClick={confirmDeposit}>✔ Đã nhận cọc</button>}
         {canShip && <button className="primary" disabled={sh.busy === o.id} onClick={() => sh.ship(o)}>{sh.busy === o.id ? '…' : 'Giao hàng'}</button>}
         {o.tracking && status === 'Đang giao' && <button onClick={() => sh.simulateWebhook(o)} title="Giả lập webhook">✔ Đã giao</button>}
       </div>

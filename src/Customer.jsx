@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import { vnd, uid, today, STOCK_STATUS, ETA } from './lib'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import DepositPay from './Deposit'
+import { vnd, uid, today, depositOf, STOCK_STATUS, ETA } from './lib'
 import { AddressPicker, EMPTY_ADDR, addrError, useVnData } from './address'
 import { smartParse } from './smartpaste'
 
@@ -92,7 +93,8 @@ export function ChatBox({ products, onBuy }) {
   )
 }
 
-export function OrderForm({ products, onSubmit, pick, showDeposit = true, smart = false, prefill = null }) {
+// depositPct > 0: shop yêu cầu khách chuyển khoản cọc ngay sau khi gửi đơn
+export function OrderForm({ products, onSubmit, pick, showDeposit = true, smart = false, prefill = null, depositPct = 0 }) {
   const blank = { name: '', phone: '', productId: products[0]?.id || '', size: '', color: '', qty: 1, deposit: 0 }
   const [f, setF] = useState(blank)
   const [addr, setAddr] = useState(EMPTY_ADDR)
@@ -127,6 +129,7 @@ export function OrderForm({ products, onSubmit, pick, showDeposit = true, smart 
   const p = products.find((x) => x.id === f.productId) ?? products[0]
 
   const [busy, setBusy] = useState(false)
+  const onPaid = useCallback((r) => setDone((d) => d && { ...d, payment: null, deposit: r.deposit }), [])
 
   const submit = async (e) => {
     e.preventDefault()
@@ -162,11 +165,24 @@ export function OrderForm({ products, onSubmit, pick, showDeposit = true, smart 
       qty: Math.max(1, Number(f.qty) || 1),
       total: (p.priceVnd || 0) * Math.max(1, Number(f.qty) || 1),
       customerName: f.name.trim(),
+      payment: res?.payment || null,
     })
     setF({ ...blank, productId: f.productId })
     setAddr(EMPTY_ADDR)
     setPaste('')
     setPasteMsg('')
+  }
+
+  if (done?.payment && !smart) {
+    return (
+      <section className="card order-pay" id="order-form" aria-labelledby="order-pay-title">
+        <span className="success-eyebrow">BƯỚC CUỐI · CHUYỂN KHOẢN CỌC</span>
+        <h2 id="order-pay-title">Chuyển cọc {vnd(done.payment.amount)} để hoàn tất đơn {done.id}</h2>
+        <p className="success-copy">Đơn sẽ được xác nhận tự động ngay khi shop nhận được tiền cọc. Phần còn lại ({vnd(Math.max(0, done.total - done.payment.amount))}) thanh toán khi nhận hàng.</p>
+        <DepositPay payment={done.payment} trackCode={done.trackCode} onPaid={onPaid} />
+        {done.trackCode && <a className="success-again" href={`/track/${done.trackCode}`}>Để sau — xem đơn & chuyển khoản tại trang theo dõi</a>}
+      </section>
+    )
   }
 
   if (done && !smart) {
@@ -180,7 +196,11 @@ export function OrderForm({ products, onSubmit, pick, showDeposit = true, smart 
         </div>
         <span className="success-eyebrow">ĐẶT HÀNG THÀNH CÔNG</span>
         <h2 id="order-success-title">Cảm ơn {done.customerName}!</h2>
-        <p className="success-copy">Shop đã nhận được đơn hàng của bạn và sẽ sớm liên hệ để xác nhận.</p>
+        <p className="success-copy">
+          {done.deposit > 0
+            ? <>Shop đã nhận tiền cọc <b>{vnd(done.deposit)}</b>, đơn hàng đã được xác nhận và đang chờ shop xử lý.</>
+            : 'Shop đã nhận được đơn hàng của bạn và sẽ sớm liên hệ để xác nhận.'}
+        </p>
 
         <div className="success-order-id">
           <span>Mã đơn hàng</span>
@@ -257,8 +277,11 @@ export function OrderForm({ products, onSubmit, pick, showDeposit = true, smart 
         {showDeposit && <label>Tiền cọc (đ)<input type="number" min="0" value={f.deposit} onChange={set('deposit')} /></label>}
       </div>
       <p>Tạm tính: <b>{vnd((p?.priceVnd || 0) * (Number(f.qty) || 0))}</b>{p && <span className="muted"> · {STOCK_STATUS[p.status]}, nhận hàng {ETA[p.status]}</span>}</p>
+      {depositPct > 0 && !smart && (
+        <p className="deposit-note">💳 Cọc trước {depositPct}% (≈ <b>{vnd(depositOf((p?.priceVnd || 0) * (Number(f.qty) || 0), depositPct))}</b>) bằng chuyển khoản/QR, phần còn lại trả khi nhận hàng.</p>
+      )}
       {err && <p className="err">{err}</p>}
-      <button className="primary">Đặt hàng</button>
+      <button className="primary" disabled={busy}>{busy ? 'Đang gửi…' : depositPct > 0 && !smart ? 'Đặt hàng & chuyển cọc' : 'Đặt hàng'}</button>
     </form>
   )
 }

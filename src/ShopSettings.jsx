@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { NumInput } from './ui'
-import { BANKS, DEFAULT_SHOP, DEFAULT_TEMPLATE, TEMPLATE_VARS, fillTemplate, templateVars, vnd } from './lib'
+import { BANKS, DEFAULT_SHOP, DEFAULT_TEMPLATE, TEMPLATE_VARS, DEPOSIT_TTL_HOURS, depositEnabled, fillTemplate, templateVars, vnd } from './lib'
 import { bookmarkletHref } from './clipper'
 import { copyText } from './Kanban'
 
@@ -29,6 +29,12 @@ export default function ShopSettings({ shop, setShop, products, notify }) {
           <label>Tỷ lệ cọc mặc định (%)<NumInput value={s.depositPct} onChange={(v) => set({ depositPct: Math.min(100, v) })} /></label>
         </div>
         <small className="muted">Thông tin ngân hàng dùng để tạo mã QR VietQR trên hóa đơn K80 (số tiền COD còn thiếu).</small>
+        <p className="deposit-note" style={{ marginTop: 12 }}>
+          {depositEnabled(s)
+            ? <>💳 <b>Đang bật cọc trước {s.depositPct}%</b>: khách đặt trên trang shop sẽ thấy QR chuyển khoản, đơn nằm ở cột "Chờ cọc" đến khi tiền về (quá {DEPOSIT_TTL_HOURS} giờ tự hủy).</>
+            : <>💳 Nhập số tài khoản và tỷ lệ cọc &gt; 0 để bắt khách chuyển cọc trước khi đặt đơn thành công.</>}
+          <br /><small>Tự xác nhận tiền về: tạo webhook tại SePay với URL <code>{location.origin}/api/webhook/sepay</code>, chứng thực "API Key" trùng biến <code>SEPAY_API_KEY</code> trên máy chủ.</small>
+        </p>
       </div>
 
       <div className="card">

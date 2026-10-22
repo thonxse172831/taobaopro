@@ -11,6 +11,8 @@ services:
         sync: false
       - key: MONGODB_DB
         value: taobaopro
+      - key: SEPAY_API_KEY
+        sync: false
       - key: SESSION_SECRET
         generateValue: true
       - key: TRUST_PROXY

@@ -10,6 +10,7 @@ import { openDb } from './db.js'
 import { createAuth, hashPassword, verifyPassword } from './auth.js'
 import {
   withCosts, normalizeCfg, DEFAULT_PRICING, SEED_PRODUCTS, priceBreakdown, rateOn, orderTotals, trackStep, TRACK_STEPS, STATUS_LABEL, normStatus,
+  DEFAULT_SHOP, BANKS, depositOf, depositEnabled, DEPOSIT_TTL_HOURS,
 } from '../src/lib.js'
 import { mapWebhook } from '../src/logistics.js'
 
@@ -50,6 +51,29 @@ const openStream = (ch) => (req, res) => {
 const clip = (v, n) => String(v ?? '').trim().slice(0, n)
 const vnToday = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10)
 const newId = () => 'DH' + crypto.randomBytes(4).toString('hex').toUpperCase()
+const ORDER_CODE = /DH[0-9A-F]{8}/i
+const safeEq = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest())
+const DEPOSIT_TTL_MS = DEPOSIT_TTL_HOURS * 3600 * 1000
+
+// Thông tin chuyển khoản cọc cho khách (QR VietQR dựng ở trình duyệt từ các trường này)
+const paymentInfo = (o, shop) => ({
+  bankBin: shop.bankBin, bankName: BANKS.find((b) => b[0] === shop.bankBin)?.[1] || '', account: shop.bankAccount, holder: shop.bankHolder,
+  amount: Math.max(0, (o.depositDue || 0) - (o.depositPaid || 0)), memo: o.id,
+  expiresAt: new Date(Date.parse(o.statusAt || o.createdAt) + DEPOSIT_TTL_MS).toISOString(),
+})
+
+// Cộng tiền khách chuyển vào đơn; đủ cọc thì đơn chuyển sang "Mới" để shop xử lý (kể cả đơn vừa bị tự hủy vì quá hạn)
+function applyPayment(o, amount, ref) {
+  const at = new Date().toISOString()
+  const paid = (o.depositPaid || 0) + amount
+  const next = { ...o, depositPaid: paid, deposit: paid, payments: [...(o.payments || []), { amount, ref, at }] }
+  const waiting = o.status === 'Chờ cọc' || (o.status === 'Đã hủy' && o.autoCanceled)
+  if (waiting && paid >= (o.depositDue || 0)) {
+    Object.assign(next, { status: 'Mới', statusAt: at, paidAt: at })
+    delete next.autoCanceled
+  }
+  return next
+}
 
 export async function createApp(env = process.env) {
   const ADMIN_USER = String(env.ADMIN_USER || 'thanhngancao').toLowerCase()
@@ -71,6 +95,19 @@ export async function createApp(env = process.env) {
   if ((await db.getKv('products')) === undefined) await db.setKv('products', SEED_PRODUCTS)
   if ((await db.getKv('rates')) === undefined) await db.setKv('rates', [{ date: '2026-01-01', rate: 3600 }])
   if ((await db.getKv('pricing')) === undefined) await db.setKv('pricing', DEFAULT_PRICING)
+
+  // Đơn chờ cọc quá hạn tự hủy (tiền về muộn vẫn được ghi nhận và khôi phục đơn)
+  const expireDeposits = async () => {
+    const now = Date.now()
+    let n = 0
+    for (const o of await db.ordersByStatus('Chờ cọc')) {
+      if (now - Date.parse(o.statusAt || o.createdAt) < DEPOSIT_TTL_MS) continue
+      await db.saveOrder({ ...o, status: 'Đã hủy', statusAt: new Date().toISOString(), autoCanceled: true, note: [o.note, `Tự hủy: quá ${DEPOSIT_TTL_HOURS} giờ chưa chuyển cọc`].filter(Boolean).join(' · ') })
+      n += 1
+    }
+    if (n) broadcast('admin', 'orders')
+  }
+  setInterval(() => expireDeposits().catch((e) => console.error('[hủy đơn chờ cọc]', e)), 10 * 60 * 1000).unref()
 
   const app = express()
   app.disable('x-powered-by')
@@ -162,7 +199,8 @@ export async function createApp(env = process.env) {
   api.get('/public/events', openStream('public'))
   api.get('/public/catalog', async (req, res) => {
     const products = ((await db.getKv('products')) || []).map((p) => Object.fromEntries(PUBLIC_FIELDS.map((k) => [k, p[k]])))
-    res.set('Cache-Control', 'public, max-age=30').json({ products })
+    const shop = { ...DEFAULT_SHOP, ...(await db.getKv('shop')) }
+    res.set('Cache-Control', 'public, max-age=30').json({ products, depositPct: depositEnabled(shop) ? Number(shop.depositPct) : 0 })
   })
 
   // Chuyển tiếp ảnh mẫu ở domain ngoài (cùng origin) để trình duyệt đọc được pixel khi so khớp ảnh
@@ -212,9 +250,13 @@ export async function createApp(env = process.env) {
     const order = withCosts({
       id: newId(), trackCode: newTrackCode(), owner: auth.session(req)?.username, createdAt: vnToday(), statusAt: new Date().toISOString(), status: 'Mới', deposit: 0, source: 'shop', customer, items,
     }, products, (await db.getKv('rates')) || [], normalizeCfg(await db.getKv('pricing')))
+    // Shop đã cài tài khoản nhận cọc: đơn chờ khách chuyển khoản, SePay báo tiền về thì tự xác nhận
+    const shop = { ...DEFAULT_SHOP, ...(await db.getKv('shop')) }
+    const due = depositEnabled(shop) ? depositOf(orderTotals(order).revenue, shop.depositPct) : 0
+    if (due > 0) Object.assign(order, { status: 'Chờ cọc', depositDue: due, depositPaid: 0 })
     await db.saveOrder(order)
     broadcast('admin', 'orders')
-    res.status(201).json({ ok: true, id: order.id, trackCode: order.trackCode })
+    res.status(201).json({ ok: true, id: order.id, trackCode: order.trackCode, payment: due > 0 ? paymentInfo(order, shop) : null })
   })
 
   // Trang theo dõi đơn của khách: chỉ trả dữ liệu rút gọn, tra theo mã ngẫu nhiên khó đoán
@@ -222,9 +264,10 @@ export async function createApp(env = process.env) {
     const code = clip(req.params.code, 20).toUpperCase()
     const o = code ? await db.orderByTrackCode(code) : undefined
     if (!o) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' })
-    const shop = (await db.getKv('shop')) || {}
+    const shop = { ...DEFAULT_SHOP, ...(await db.getKv('shop')) }
     const t = orderTotals(o)
     res.set('Cache-Control', 'no-store').json({
+      payment: o.status === 'Chờ cọc' ? paymentInfo(o, shop) : null, depositDue: o.depositDue || 0,
       id: o.id, createdAt: o.createdAt, statusAt: o.statusAt || null, status: normStatus(o.status), label: STATUS_LABEL[normStatus(o.status)] || o.status,
       step: trackStep(o.status), steps: TRACK_STEPS, canceled: o.status === 'Đã hủy',
       customer: maskName(o.customer?.name), carrier: o.carrier || '', tracking: o.tracking || '',
@@ -239,6 +282,38 @@ export async function createApp(env = process.env) {
     const phone = clip(req.query.phone, 20).replace(/[\s.-]/g, '')
     if (!o || !phone || o.customer?.phone !== phone) return res.status(404).json({ error: 'Không tìm thấy đơn' })
     res.json({ id: o.id, status: o.status, createdAt: o.createdAt, carrier: o.carrier, tracking: o.tracking, items: o.items.map(({ name, size, color, qty, price }) => ({ name, size, color, qty, price })) })
+  })
+
+  // ---------- Webhook SePay: báo có tiền vào tài khoản ngân hàng ----------
+  // Cấu hình ở SePay: URL https://tenmien.com/api/webhook/sepay, kiểu chứng thực "API Key" = SEPAY_API_KEY
+  api.post('/webhook/sepay', async (req, res) => {
+    const key = env.SEPAY_API_KEY
+    if (!key) return res.status(503).json({ success: false, error: 'Chưa cấu hình SEPAY_API_KEY' })
+    const given = String(req.headers.authorization || '').replace(/^Apikey\s+/i, '')
+    if (!safeEq(given, key)) return res.status(401).json({ success: false, error: 'Sai API key' })
+    const b = req.body || {}
+    if (b.id == null) return res.status(400).json({ success: false, error: 'Thiếu id giao dịch' })
+    // Luôn trả 200 cho giao dịch hợp lệ (kể cả không khớp đơn) để SePay không gửi lại
+    if (b.transferType !== 'in') return res.json({ success: true, ignored: 'out' })
+    const amount = Math.round(Number(b.transferAmount) || 0)
+    const content = clip(`${b.code || ''} ${b.content || ''}`, 500)
+    const shop = { ...DEFAULT_SHOP, ...(await db.getKv('shop')) }
+    if (shop.bankAccount && b.accountNumber && String(b.accountNumber) !== shop.bankAccount) return res.json({ success: true, ignored: 'account' })
+    const payId = `sepay:${b.id}`
+    const orderId = (content.match(ORDER_CODE) || [])[0]?.toUpperCase() || null
+    const fresh = await db.addPayment({ _id: payId, amount, content, gateway: clip(b.gateway, 40), ref: clip(b.referenceCode, 60), orderId: null })
+    if (!fresh) return res.json({ success: true, duplicate: true })
+    const o = orderId && await db.getOrder(orderId)
+    if (!o || amount <= 0) {
+      broadcast('admin', 'payments')
+      return res.json({ success: true, matched: false })
+    }
+    if (!(await db.claimPayment(payId, o.id))) return res.json({ success: true, duplicate: true })
+    const next = applyPayment(o, amount, payId)
+    await db.saveOrder(next)
+    broadcast('admin', 'orders')
+    broadcast('admin', 'payments')
+    res.json({ success: true, matched: true, id: o.id, status: next.status })
   })
 
   // ---------- Webhook hãng vận chuyển ----------
@@ -269,10 +344,25 @@ export async function createApp(env = process.env) {
     if (!KV_KEYS.has(req.params.key)) return res.status(404).json({ error: 'Khóa không hợp lệ' })
     if (req.body === undefined || !('value' in req.body)) return res.status(400).json({ error: 'Thiếu value' })
     await db.setKv(req.params.key, req.body.value)
-    if (['products', 'rates', 'pricing'].includes(req.params.key)) broadcast('public', 'catalog')
+    if (['products', 'rates', 'pricing', 'shop'].includes(req.params.key)) broadcast('public', 'catalog')
     res.json({ ok: true })
   })
   admin.get('/orders', async (req, res) => res.json(await db.listOrders()))
+  admin.get('/payments', async (req, res) => res.json(await db.listPayments()))
+  // Khách ghi sai nội dung chuyển khoản: shop gán tay giao dịch vào đơn
+  admin.post('/payments/:id/assign', async (req, res) => {
+    const p = await db.getPayment(req.params.id)
+    if (!p) return res.status(404).json({ error: 'Không thấy giao dịch' })
+    if (p.orderId) return res.status(409).json({ error: `Giao dịch đã gán vào đơn ${p.orderId}` })
+    const o = await db.getOrder(clip(req.body?.orderId, 20).toUpperCase())
+    if (!o) return res.status(404).json({ error: 'Không thấy đơn hàng' })
+    if (!(await db.claimPayment(p._id, o.id))) return res.status(409).json({ error: 'Giao dịch vừa được gán vào đơn khác' })
+    const next = applyPayment(o, p.amount, p._id)
+    await db.saveOrder(next)
+    broadcast('admin', 'orders')
+    broadcast('admin', 'payments')
+    res.json({ ok: true, id: o.id, status: next.status })
+  })
   admin.put('/orders/:id', async (req, res) => {
     const o = req.body
     if (!o || o.id !== req.params.id || !o.customer || !Array.isArray(o.items)) return res.status(400).json({ error: 'Đơn không hợp lệ' })

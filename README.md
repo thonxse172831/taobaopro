@@ -11,6 +11,7 @@ Hệ thống bán hàng order Taobao/1688/Pinduoduo: trang quản trị (đăng 
 |---|---|
 | Khách | `GET /api/public/catalog`, `POST /api/public/orders`, `GET /api/public/orders/:id?phone=` |
 | Admin (cần đăng nhập) | `/api/auth/*`, `/api/admin/events` (SSE realtime), `/api/admin/state`, `/api/admin/orders` |
+| Webhook SePay (tiền cọc) | `POST /api/webhook/sepay` kèm header `Authorization: Apikey <SEPAY_API_KEY>` |
 | Webhook vận chuyển | `POST /api/webhook/{ghn,spx,jt,viettelpost}` kèm `?secret=` hoặc header `x-webhook-secret` |
 
 Giá bán, giá vốn của đơn khách luôn do server tính lại từ dữ liệu mẫu (không tin giá khách gửi).
@@ -24,6 +25,7 @@ Giá bán, giá vốn của đơn khách luôn do server tính lại từ dữ l
 - **Hotkeys**: Ctrl+S lưu, Ctrl+F tìm khách, Ctrl+N hoặc Alt+N đơn mới.
 - **Theo dõi đơn cho khách**: `/track/MÃ`.
 - **Tìm kiếm sản phẩm bằng ảnh**: khách chọn ảnh hoặc kéo thả trên trang shop; so khớp ngay trong trình duyệt với ảnh catalog (chịu được ảnh chụp màn hình, cắt viền, đổi độ sáng), không tải ảnh khách lên server. Ảnh mẫu ở domain ngoài được đọc qua `GET /api/public/img/:id`.
+- **Cọc trước bằng chuyển khoản**: khi tab "Cửa hàng" có số tài khoản và tỷ lệ cọc > 0, khách đặt xong sẽ thấy QR VietQR (nội dung CK = mã đơn). Đơn nằm ở cột "Chờ cọc"; SePay báo tiền về thì đơn tự chuyển sang "Chờ đặt hàng" và hiện thông báo ở admin. Quá 24 giờ chưa cọc thì tự hủy (tiền về muộn vẫn khôi phục đơn). Giao dịch ghi sai nội dung hiện ở bảng "Tiền cọc chuyển khoản" để gán tay. Cấu hình SePay: Webhook URL `https://tenmien.com/api/webhook/sepay`, chứng thực API Key = `SEPAY_API_KEY`.
 - **Câu chốt đơn, Bill K80 + QR VietQR**, **quét mã vạch bằng camera** (cần HTTPS) và PWA (cài lên điện thoại).
 
 ## Chạy local

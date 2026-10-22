@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
+import DepositPay from './Deposit'
 import { Brand, ThemeToggle, useTheme } from './ui'
 import { vnd } from './lib'
 
@@ -12,6 +13,8 @@ export default function Track({ code }) {
   const [dark, setDark] = useTheme()
   const [o, setO] = useState(null)
   const [err, setErr] = useState('')
+
+  const onPaid = useCallback((r) => setO(r), [])
 
   useEffect(() => {
     const load = () => api(`/public/track/${encodeURIComponent(code)}`).then((r) => { setO(r); setErr('') }).catch((e) => setErr(e.message))
@@ -44,6 +47,12 @@ export default function Track({ code }) {
                     </li>
                   ))}
                 </ol>
+              )}
+              {o.payment && (
+                <>
+                  <p>Vui lòng chuyển khoản cọc <b>{vnd(o.payment.amount)}</b> để shop xác nhận và bắt đầu mua hàng cho bạn.</p>
+                  <DepositPay payment={o.payment} trackCode={code} onPaid={onPaid} />
+                </>
               )}
               {o.tracking && (
                 <p>🚚 {o.carrier}: <b>{o.tracking}</b>{CARRIER_URL[o.carrier] && <> · <a href={CARRIER_URL[o.carrier] + encodeURIComponent(o.tracking)} target="_blank" rel="noreferrer">Tra cứu hành trình</a></>}</p>
