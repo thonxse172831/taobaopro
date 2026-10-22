@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { vnd, orderTotals, fullAddress, ORDER_STATUS, STATUS_LABEL, normStatus, isStale, daysIn, FINAL_STATUS, fillTemplate, templateVars, DEFAULT_TEMPLATE } from './lib'
+import { vnd, orderTotals, fullAddress, ORDER_STATUS, STATUS_LABEL, normStatus, isStale, daysIn, FINAL_STATUS } from './lib'
+import { fold } from './smartpaste'
 
 export const copyText = async (text) => {
   try {
@@ -10,17 +11,12 @@ export const copyText = async (text) => {
   }
 }
 
-export function OrderCard({ o, products, shop, sh, patchOrder, onBill, notify, onEdit }) {
+export function OrderCard({ o, sh, patchOrder, onBill, notify, onEdit, onCancel, q = '' }) {
   const status = normStatus(o.status)
   const t = orderTotals(o)
   const stale = isStale(o)
   const days = Math.floor(daysIn(o))
-  const product = products.find((p) => p.id === o.items[0]?.productId)
 
-  const copyClose = async () => {
-    const text = fillTemplate(shop.template || DEFAULT_TEMPLATE, templateVars({ product, order: o, shop, origin: location.origin }))
-    notify(await copyText(text) ? 'Đã copy câu chốt đơn' : 'Trình duyệt chặn clipboard')
-  }
   const copyTrack = async () => {
     if (!o.trackCode) return notify('Đơn này chưa có mã theo dõi')
     notify(await copyText(`${location.origin}/track/${o.trackCode}`) ? 'Đã copy link theo dõi cho khách' : 'Trình duyệt chặn clipboard')
@@ -37,27 +33,28 @@ export function OrderCard({ o, products, shop, sh, patchOrder, onBill, notify, o
 
   return (
     <div
-      className={'kcard' + (stale ? ' stale' : '')}
+      className={'kcard' + (stale ? ' stale' : '') + (status === 'Đã hủy' ? ' canceled' : '')}
       style={{ '--c': STATUS_COLOR[status] }}
       draggable
       onDragStart={(e) => { e.dataTransfer.setData('text/plain', o.id); e.dataTransfer.effectAllowed = 'move' }}
     >
-      <div className="khead"><b>{o.id}</b><small>{days >= 1 ? `${days} ngày` : 'hôm nay'}</small></div>
-      <div>{o.customer.name} <small className="muted">{o.customer.phone}</small></div>
+      <div className="khead"><b><Hl text={o.id} q={q} /></b><small>{days >= 1 ? `${days} ngày` : 'hôm nay'}</small></div>
+      <div><Hl text={o.customer.name} q={q} /> <small className="muted"><Hl text={o.customer.phone} q={q} /></small></div>
       <small className="muted">{o.items.map((i) => `${i.name} ${i.size}/${i.color} x${i.qty}`).join('; ')}</small>
       <div className="khead"><span>{vnd(t.revenue)}</span><small>COD {vnd(t.cod)}</small></div>
       {waitDeposit && <div className="deposit-line">⏳ Chờ cọc {vnd(o.depositDue)}{o.depositPaid > 0 && ` · đã nhận ${vnd(o.depositPaid)}`}</div>}
       {!waitDeposit && o.paidAt && <small className="ok">💰 Đã cọc {vnd(o.depositPaid)}{o.paidManual ? ' (xác nhận tay)' : ' (tự động)'}</small>}
       {stale && <div className="warn-line">⚠ Chờ kho TQ nhận quá {days} ngày — kiểm tra shop TQ / khiếu nại</div>}
-      {o.cnTracking && <small>📦 {o.cnCarrier || 'TQ'}: {o.cnTracking}</small>}
-      {o.tracking && <small>🚚 {o.carrier}: {o.tracking}</small>}
+      {o.cnTracking && <small>📦 {o.cnCarrier || 'TQ'}: <Hl text={o.cnTracking} q={q} /></small>}
+      {o.tracking && <small>🚚 {o.carrier}: <Hl text={o.tracking} q={q} /></small>}
+      {status === 'Đã hủy' && o.cancelReason && <small className="err">✕ Lý do hủy: {o.cancelReason}</small>}
       {o.note && <small className="muted">📝 {o.note}</small>}
       <div className="kactions">
-        <button title="Copy câu chốt đơn" onClick={copyClose}>💬</button>
         <button title="Copy link theo dõi" onClick={copyTrack}>🔗</button>
         <button title="Hóa đơn K80" onClick={() => onBill(o)}>🧾</button>
         {o.waybillUrl && <a className="btn-link" href={o.waybillUrl} target="_blank" rel="noreferrer" title="In tem">🏷</a>}
-        {onEdit && <button title="Sửa ghi chú / mã vận đơn TQ" onClick={() => onEdit(o)}>✏️</button>}
+        {onEdit && <button title="Sửa đơn: khách, mẫu, số lượng, giá…" onClick={() => onEdit(o)}>✏️</button>}
+        {onCancel && status !== 'Đã hủy' && status !== 'Hoàn thành' && <button className="cancel-btn" title="Hủy đơn" onClick={() => onCancel(o)}>✕</button>}
         {waitDeposit && <button className="primary" onClick={confirmDeposit}>✔ Đã nhận cọc</button>}
         {canShip && <button className="primary" disabled={sh.busy === o.id} onClick={() => sh.ship(o)}>{sh.busy === o.id ? '…' : 'Giao hàng'}</button>}
         {o.tracking && status === 'Đang giao' && <button onClick={() => sh.simulateWebhook(o)} title="Giả lập webhook">✔ Đã giao</button>}
@@ -108,8 +105,29 @@ export default function Kanban({ orders, statuses = ORDER_STATUS, ...rest }) {
   )
 }
 
+// Tìm đơn không phân biệt dấu/hoa thường: "nguyen thu ha" khớp "Nguyễn Thu Hà"
+const norm = (s) => fold(String(s ?? '')).replace(/s+/g, ' ')
 export const orderMatches = (o, q) => {
-  const n = q.trim().toLowerCase()
+  const n = norm(q).trim()
   if (!n) return true
-  return [o.id, o.customer.name, o.customer.phone, o.tracking, o.cnTracking, fullAddress(o.customer)].join(' ').toLowerCase().includes(n)
+  const hay = norm([o.id, o.customer.name, o.customer.phone, o.tracking, o.cnTracking, fullAddress(o.customer), o.items.map((i) => i.name).join(' ')].join(' | '))
+  return hay.includes(n) || (/^[ds.]+$/.test(q) && hay.includes(q.replace(/[s.]/g, '')))
+}
+
+// Tô sáng phần khớp từ khóa (fold giữ nguyên độ dài chuỗi nên cắt đúng vị trí trên bản có dấu)
+export function Hl({ text, q }) {
+  const t = String(text ?? '')
+  const n = norm(q).trim()
+  if (!n || !t) return t
+  const h = fold(t)
+  const out = []
+  let i = 0
+  for (let j = h.indexOf(n); j >= 0; j = h.indexOf(n, j + n.length)) {
+    if (j > i) out.push(t.slice(i, j))
+    out.push(<mark key={j}>{t.slice(j, j + n.length)}</mark>)
+    i = j + n.length
+  }
+  if (!out.length) return t
+  out.push(t.slice(i))
+  return out
 }

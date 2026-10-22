@@ -19,6 +19,8 @@ export async function openDb(rawUri, dbName = 'taobaopro') {
   await orders.createIndex({ status: 1 })
   const payments = db.collection('payments')
   await payments.createIndex({ at: -1 })
+  const chats = db.collection('chats')
+  await chats.createIndex({ updatedAt: -1 })
   const now = () => new Date().toISOString()
 
   return {
@@ -56,6 +58,19 @@ export async function openDb(rawUri, dbName = 'taobaopro') {
       }, { upsert: true })
     },
     deleteOrder: async (id) => { await orders.deleteOne({ _id: id }) },
+    // Chat trực tiếp khách ↔ shop: mỗi cuộc trò chuyện một document, giữ tối đa 500 tin gần nhất
+    createChat: async (c) => { await chats.insertOne({ ...c, createdAt: now(), updatedAt: now() }) },
+    getChat: async (id) => chats.findOne({ _id: id }),
+    listChats: async (limit = 100) => chats.find({}, { projection: { messages: { $slice: -1 } } }).sort({ updatedAt: -1 }).limit(limit).toArray(),
+    addChatMessage: async (id, msg, set = {}, inc = {}) => {
+      const r = await chats.findOneAndUpdate(
+        { _id: id },
+        { $push: { messages: { $each: [{ ...msg, at: now() }], $slice: -500 } }, $set: { ...set, updatedAt: now() }, ...(Object.keys(inc).length && { $inc: inc }) },
+        { returnDocument: 'after' },
+      )
+      return r
+    },
+    updateChat: async (id, set) => { await chats.updateOne({ _id: id }, { $set: set }) },
     close: () => client.close(),
   }
 }

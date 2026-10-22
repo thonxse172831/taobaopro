@@ -1,17 +1,14 @@
 import { useMemo } from 'react'
 import { NumInput } from './ui'
-import { BANKS, DEFAULT_SHOP, DEFAULT_TEMPLATE, TEMPLATE_VARS, DEPOSIT_TTL_HOURS, depositEnabled, fillTemplate, templateVars, vnd } from './lib'
+import { BANKS, DEFAULT_SHOP, DEPOSIT_TTL_HOURS, depositEnabled } from './lib'
 import { bookmarkletHref } from './clipper'
 import { copyText } from './Kanban'
 
-export default function ShopSettings({ shop, setShop, products, notify }) {
+export default function ShopSettings({ shop, setShop, notify }) {
   const s = { ...DEFAULT_SHOP, ...shop }
   const set = (patch) => setShop({ ...s, ...patch })
-  const sample = products[0]
   const href = useMemo(() => bookmarkletHref(location.origin), [])
-  const preview = fillTemplate(s.template || DEFAULT_TEMPLATE, templateVars({ product: sample, shop: s, origin: location.origin }))
 
-  const addVar = (v) => set({ template: `${s.template || ''}{${v}}` })
   const copyBm = async () => notify(await copyText(href) ? 'Đã copy bookmarklet' : 'Trình duyệt chặn clipboard')
 
   return (
@@ -35,15 +32,6 @@ export default function ShopSettings({ shop, setShop, products, notify }) {
             : <>💳 Nhập số tài khoản và tỷ lệ cọc &gt; 0 để bắt khách chuyển cọc trước khi đặt đơn thành công.</>}
           <br /><small>Tự xác nhận tiền về: tạo webhook tại SePay với URL <code>{location.origin}/api/webhook/sepay</code>, chứng thực "API Key" trùng biến <code>SEPAY_API_KEY</code> trên máy chủ.</small>
         </p>
-      </div>
-
-      <div className="card">
-        <h3>Mẫu câu chốt đơn tự động</h3>
-        <textarea rows="5" value={s.template} onChange={(e) => set({ template: e.target.value })} />
-        <div className="chips">{TEMPLATE_VARS.map((v) => <button key={v} type="button" onClick={() => addVar(v)}>{`{${v}}`}</button>)}</div>
-        <div className="row"><button type="button" onClick={() => set({ template: DEFAULT_TEMPLATE })}>Khôi phục mẫu gốc</button></div>
-        <h4>Xem trước {sample ? `(mẫu "${sample.name}", ${vnd(sample.priceVnd)})` : ''}</h4>
-        <p className="preview">{preview}</p>
       </div>
 
       <div className="card" style={{ gridColumn: '1 / -1' }}>

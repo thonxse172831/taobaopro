@@ -39,7 +39,12 @@ const PUBLIC_FIELDS = ['id', 'name', 'image', 'sizes', 'colors', 'tags', 'catego
 // Kênh đẩy tin tức thời (Server-Sent Events): 'admin' và 'public'
 const channels = { admin: new Set(), public: new Set() }
 const broadcast = (ch, event) => { for (const res of channels[ch]) res.write(`event: ${event}\ndata: ${Date.now()}\n\n`) }
-const heartbeat = setInterval(() => { for (const set of Object.values(channels)) for (const res of set) res.write(': ping\n\n') }, 25000)
+// Kênh riêng cho từng cuộc chat trực tiếp: khách chỉ nhận tin của cuộc trò chuyện của mình
+const chatStreams = new Map()
+const pushChat = (id) => { for (const res of chatStreams.get(id) || []) res.write(`event: chat\ndata: ${Date.now()}\n\n`) }
+const heartbeat = setInterval(() => {
+  for (const set of [...Object.values(channels), ...chatStreams.values()]) for (const res of set) res.write(': ping\n\n')
+}, 25000)
 heartbeat.unref()
 const openStream = (ch) => (req, res) => {
   res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
@@ -323,8 +328,12 @@ export async function createApp(env = process.env) {
       const p = products.find((x) => x.id === i?.productId)
       if (!p) return res.status(400).json({ error: 'Mẫu hàng không tồn tại' })
       const qty = Math.min(99, Math.max(1, Math.floor(Number(i.qty)) || 1))
-      const size = p.sizes?.includes(i.size) ? i.size : p.sizes?.[0] || ''
-      const color = p.colors?.includes(i.color) ? i.color : p.colors?.[0] || ''
+      // Mẫu nhiều size/màu thì khách phải tự chọn; chỉ tự điền khi mẫu có đúng một lựa chọn
+      const pick = (opts = [], v) => (opts.includes(v) ? v : opts.length === 1 ? opts[0] : opts.length ? null : '')
+      const size = pick(p.sizes, i.size)
+      const color = pick(p.colors, i.color)
+      if (size === null) return res.status(400).json({ error: `Vui lòng chọn size cho mẫu "${p.name}"` })
+      if (color === null) return res.status(400).json({ error: `Vui lòng chọn màu cho mẫu "${p.name}"` })
       items.push({ productId: p.id, name: p.name, size, color, qty, price: p.priceVnd, cost: 0 })
     }
     const order = withCosts({
@@ -363,6 +372,68 @@ export async function createApp(env = process.env) {
     const phone = clip(req.query.phone, 20).replace(/[\s.-]/g, '')
     if (!o || !phone || o.customer?.phone !== phone) return res.status(404).json({ error: 'Không tìm thấy đơn' })
     res.json({ id: o.id, status: o.status, createdAt: o.createdAt, carrier: o.carrier, tracking: o.tracking, items: o.items.map(({ name, size, color, qty, price }) => ({ name, size, color, qty, price })) })
+  })
+
+  // ---------- Chat trực tiếp với shop (khi bot không giải quyết được) ----------
+  // Mã cuộc trò chuyện là chuỗi ngẫu nhiên 16 byte, khó đoán: ai giữ mã (trình duyệt của khách) mới đọc/gửi được
+  const CHAT_ID = /^[A-Za-z0-9_-]{20,40}$/
+  const chatView = (c) => ({ id: c._id, status: c.status, name: c.name, messages: (c.messages || []).map(({ from, text, at }) => ({ from, text, at })), unread: c.unreadCustomer || 0 })
+  const loadChat = async (req, res) => {
+    const c = CHAT_ID.test(req.params.id) && await db.getChat(req.params.id)
+    if (!c) { res.status(404).json({ error: 'Không tìm thấy cuộc trò chuyện' }); return null }
+    return c
+  }
+  api.post('/public/chats', rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Bạn đã mở quá nhiều cuộc trò chuyện, thử lại sau' } }), async (req, res) => {
+    const b = req.body || {}
+    const s = auth.session(req)
+    const u = s && await db.getUser(s.username)
+    const name = clip(b.name, 80) || u?.name || ''
+    const phone = vnPhone(b.phone) || vnPhone(u?.phone) || vnPhone(u?._id) || ''
+    if (!name && !u) return res.status(400).json({ error: 'Vui lòng cho shop biết tên của bạn' })
+    if (!phone) return res.status(400).json({ error: 'Vui lòng nhập số điện thoại để shop liên hệ lại' })
+    // Kèm đoạn đã trò chuyện với bot để nhân viên nắm ngay khách hỏi gì
+    const history = (Array.isArray(b.history) ? b.history.slice(-20) : [])
+      .filter((m) => (m?.from === 'me' || m?.from === 'bot') && m.text)
+      .map((m) => ({ from: m.from, text: clip(m.text, 500), at: new Date().toISOString() }))
+    const id = crypto.randomBytes(16).toString('base64url')
+    const reason = clip(b.reason, 200)
+    await db.createChat({
+      _id: id, name: name || u?._id, phone, user: u?._id || null, status: 'waiting', reason, unreadShop: 1, unreadCustomer: 0,
+      messages: [...history, { from: 'system', text: 'Khách yêu cầu gặp nhân viên' + (reason ? `: ${reason}` : ''), at: new Date().toISOString() }],
+    })
+    broadcast('admin', 'chats')
+    res.status(201).json(chatView(await db.getChat(id)))
+  })
+  api.get('/public/chats/:id', async (req, res) => {
+    const c = await loadChat(req, res)
+    if (!c) return
+    if (req.query.read && c.unreadCustomer) await db.updateChat(c._id, { unreadCustomer: 0 })
+    res.set('Cache-Control', 'no-store').json(chatView(c))
+  })
+  api.get('/public/chats/:id/events', async (req, res) => {
+    if (!(await loadChat(req, res))) return
+    res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
+    res.flushHeaders()
+    res.write('retry: 3000\n\n')
+    if (!chatStreams.has(req.params.id)) chatStreams.set(req.params.id, new Set())
+    chatStreams.get(req.params.id).add(res)
+    req.on('close', () => {
+      const set = chatStreams.get(req.params.id)
+      set?.delete(res)
+      if (set && !set.size) chatStreams.delete(req.params.id)
+    })
+  })
+  api.post('/public/chats/:id/messages', rateLimit({ windowMs: 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Bạn gửi hơi nhanh, đợi chút nhé' } }), async (req, res) => {
+    const c = await loadChat(req, res)
+    if (!c) return
+    const text = clip(req.body?.text, 1000)
+    if (!text) return res.status(400).json({ error: 'Tin nhắn trống' })
+    // Khách nhắn lại sau khi đã kết thúc → mở lại, chờ nhân viên
+    const set = c.status === 'closed' ? { status: 'waiting' } : {}
+    const next = await db.addChatMessage(c._id, { from: 'me', text }, set, { unreadShop: 1 })
+    broadcast('admin', 'chats')
+    pushChat(c._id)
+    res.json(chatView(next))
   })
 
   // ---------- Webhook SePay: báo có tiền vào tài khoản ngân hàng ----------
@@ -430,6 +501,38 @@ export async function createApp(env = process.env) {
   })
   admin.get('/orders', async (req, res) => res.json(await db.listOrders()))
   admin.get('/payments', async (req, res) => res.json(await db.listPayments()))
+
+  // Hộp tin nhắn của shop
+  admin.get('/chats', async (req, res) => {
+    res.json((await db.listChats()).map((c) => ({
+      id: c._id, name: c.name, phone: c.phone, user: c.user, status: c.status, reason: c.reason, unread: c.unreadShop || 0,
+      last: c.messages?.[0] ? { from: c.messages[0].from, text: c.messages[0].text, at: c.messages[0].at } : null, updatedAt: c.updatedAt, createdAt: c.createdAt,
+    })))
+  })
+  admin.get('/chats/:id', async (req, res) => {
+    const c = await loadChat(req, res)
+    if (!c) return
+    if (c.unreadShop) { await db.updateChat(c._id, { unreadShop: 0 }); broadcast('admin', 'chats') }
+    res.json({ ...chatView(c), phone: c.phone, user: c.user, reason: c.reason, createdAt: c.createdAt })
+  })
+  admin.post('/chats/:id/messages', async (req, res) => {
+    const c = await loadChat(req, res)
+    if (!c) return
+    const text = clip(req.body?.text, 2000)
+    if (!text) return res.status(400).json({ error: 'Tin nhắn trống' })
+    const next = await db.addChatMessage(c._id, { from: 'shop', text, by: req.user.username }, { status: 'open', unreadShop: 0 }, { unreadCustomer: 1 })
+    pushChat(c._id)
+    broadcast('admin', 'chats')
+    res.json({ ...chatView(next), phone: next.phone, user: next.user, reason: next.reason, createdAt: next.createdAt })
+  })
+  admin.post('/chats/:id/close', async (req, res) => {
+    const c = await loadChat(req, res)
+    if (!c) return
+    const next = await db.addChatMessage(c._id, { from: 'system', text: 'Nhân viên đã kết thúc cuộc trò chuyện. Bạn cứ nhắn tiếp nếu cần hỗ trợ thêm nhé!' }, { status: 'closed', unreadShop: 0 })
+    pushChat(c._id)
+    broadcast('admin', 'chats')
+    res.json({ ...chatView(next), phone: next.phone, user: next.user, reason: next.reason, createdAt: next.createdAt })
+  })
   // Khách ghi sai nội dung chuyển khoản: shop gán tay giao dịch vào đơn
   admin.post('/payments/:id/assign', async (req, res) => {
     const p = await db.getPayment(req.params.id)
@@ -490,8 +593,10 @@ export async function createApp(env = process.env) {
   // ---------- Giao diện (bản build) ----------
   if (fs.existsSync(distDir)) {
     app.use('/assets', express.static(path.join(distDir, 'assets'), { immutable: true, maxAge: '1y' }))
-    app.use(express.static(distDir, { maxAge: '1h' }))
-    app.get(/^\/(?!api\/).*/, (req, res) => res.sendFile(path.join(distDir, 'index.html')))
+    // index.html / sw.js / manifest không được cache lâu: deploy xong khách vào là thấy giao diện mới ngay
+    const noCache = (res, file) => { if (/\.(html|webmanifest)$|[\\/]sw\.js$/.test(file)) res.setHeader('Cache-Control', 'no-cache') }
+    app.use(express.static(distDir, { maxAge: '1h', setHeaders: noCache }))
+    app.get(/^\/(?!api\/).*/, (req, res) => res.set('Cache-Control', 'no-cache').sendFile(path.join(distDir, 'index.html')))
   }
 
   app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars

@@ -22,6 +22,24 @@ a.cart-btn{position:relative;display:inline-grid;place-items:center;padding:0;fo
 .account-hello>div:nth-child(2){flex:1;min-width:0}
 .account-hello .logout{align-self:center;min-height:36px;font-size:13px}
 
+/* ---------- Thông tin tài khoản (thông tin cá nhân + sổ địa chỉ + mật khẩu) ---------- */
+.info-stack{display:flex;flex-direction:column;gap:16px}
+.info-stack .card{margin:0}
+.info-section{display:flex;flex-direction:column;gap:12px}
+.info-section h3{margin:0}
+.info-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.info-head button{min-height:36px;font-size:13px}
+.info-section>.row,.pw-form .row{margin:0}
+.addr-list{display:flex;flex-direction:column;gap:8px}
+.info-section .addr-entry{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 14px;border:1.5px solid var(--border);border-radius:var(--radius);background:var(--surface);box-shadow:none;animation:rise .3s var(--ease) both}
+.info-section .addr-entry.on{border-color:color-mix(in srgb,var(--brand) 55%,var(--border));background:color-mix(in srgb,var(--brand-soft) 55%,var(--surface))}
+.info-section .addr-entry:hover{box-shadow:var(--shadow-sm)}
+.addr-actions{display:flex;align-items:center;gap:6px}
+.addr-actions button{min-height:34px;padding:5px 12px;font-size:13px}
+.addr-form{display:flex;flex-direction:column;gap:12px;padding:14px;border-radius:var(--radius);background:var(--surface2)}
+.info-empty{margin:0;padding:16px;text-align:center;border:1.5px dashed var(--border-strong);border-radius:var(--radius)}
+.pw-form{display:flex;flex-direction:column;gap:12px}
+
 /* ---------- Ô tìm kiếm tích hợp tìm bằng ảnh ---------- */
 .hero-search{display:flex;align-items:center;gap:6px;max-width:560px;min-height:54px;margin:16px auto 6px;padding:5px 6px 5px 44px;border-radius:999px;background:var(--surface);border:1.5px solid var(--border);box-shadow:var(--shadow);transition:border-color .2s,box-shadow .2s,background .2s}
 .hero-search:focus-within{border-color:var(--brand);box-shadow:0 0 0 4px color-mix(in srgb,var(--brand) 16%,transparent),var(--shadow)}
@@ -110,6 +128,30 @@ a.cart-btn{position:relative;display:inline-grid;place-items:center;padding:0;fo
 .chat .chips button{flex:none;white-space:nowrap}
 .msg-image{max-width:min(200px,70%);border-radius:16px 16px 4px 16px;box-shadow:var(--shadow);animation:bubble .35s var(--spring) both}
 .msg.typing{display:flex;align-items:center;gap:8px;color:var(--muted)}
+
+/* Hộp chọn size/màu: báo đỏ phần khách chưa chọn */
+.pick-err{font-size:12px;font-weight:700}
+.picker .chips.need{padding:6px;margin:4px 0;border-radius:14px;background:var(--err-soft);box-shadow:0 0 0 1.5px color-mix(in srgb,var(--err) 45%,transparent);animation:shake-x .4s ease}
+@keyframes shake-x{20%,60%{transform:translateX(-4px)}40%,80%{transform:translateX(4px)}}
+
+/* ---------- Chat trực tiếp với nhân viên ---------- */
+.human-btn{margin-left:auto;min-height:34px;padding:4px 12px;font-size:12px;border-radius:999px;color:var(--brand-ink);background:var(--brand-soft);border-color:color-mix(in srgb,var(--brand) 30%,var(--border))}
+.chat-head .human-btn+.icon-btn{margin-left:0}
+.live-status{margin:-4px 0 8px;padding:8px 12px;border-radius:12px;font-size:12.5px;font-weight:600;background:var(--warn-soft);color:var(--warn);animation:rise .3s var(--ease) both}
+.live-status.open{background:var(--ok-soft);color:var(--ok)}
+.live-status.closed{background:var(--surface2);color:var(--muted)}
+.chat.live .msg.shop,.inbox-thread .msg.me{background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-color:transparent}
+.chat.live .msg-group.bot .msg.shop{border-bottom-left-radius:4px}
+.msg-who{font-size:11px;color:var(--muted);font-weight:600;padding:0 4px}
+.msg-system{align-self:center;max-width:90%;margin:4px 0;padding:5px 12px;border-radius:999px;background:var(--surface3);color:var(--muted);font-size:12px;text-align:center}
+.msg.auto{background:var(--surface2);color:var(--muted);font-size:13px}
+.handoff{display:flex;flex-wrap:wrap;gap:8px;animation:rise .3s var(--ease) both}
+.handoff button{min-height:38px;font-size:13px}
+.chat-contact{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:16px;background:var(--surface);border:1.5px solid color-mix(in srgb,var(--brand) 35%,var(--border));box-shadow:var(--shadow);animation:pop-in .3s var(--spring) both}
+.chat-contact b{font-size:13.5px}
+.chat-contact .row{margin:0}
+.back-bot{align-self:flex-start;margin:6px 0 0}
+.chat-fab-count{position:absolute;top:-2px;right:-2px;display:grid;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:#ef4444;color:#fff;font-size:12px;font-style:normal;font-weight:800;box-shadow:0 0 0 3px var(--surface);animation:pop .45s var(--spring)}
 
 /* ---------- Thanh điều hướng dưới (điện thoại) ---------- */
 .bottom-bar a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-height:52px;border-radius:14px;font-size:19px;color:var(--muted);text-decoration:none;font-weight:600;transition:background .2s,color .2s,transform .15s var(--ease)}

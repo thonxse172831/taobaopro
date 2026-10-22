@@ -37,8 +37,7 @@ function BuyerCard({ user, setUser }) {
       </dl>
       <div className="buyer-links">
         <a className="btn-link" href="/account">🧾 Đơn của tôi</a>
-        <a className="btn-link" href="/account/addresses">📍 Sổ địa chỉ</a>
-        <a className="btn-link" href="/account/profile">👤 Tài khoản</a>
+        <a className="btn-link" href="/account/profile">👤 Thông tin tài khoản</a>
       </div>
     </div>
   )

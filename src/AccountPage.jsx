@@ -7,10 +7,11 @@ import { AvatarEditor, BottomBar, SiteHeader, displayName } from './SiteHeader'
 import { pushPath } from './ui'
 import { vnd } from './lib'
 
-const TABS = [['orders', '🧾 Đơn của tôi'], ['addresses', '📍 Sổ địa chỉ'], ['profile', '👤 Tài khoản']]
+const TABS = [['orders', '🧾 Đơn của tôi'], ['profile', '👤 Thông tin tài khoản']]
+// /account/addresses (link cũ) gộp vào tab thông tin tài khoản
 const tabOf = () => {
   const t = location.pathname.split('/')[2]
-  return TABS.some(([id]) => id === t) ? t : 'orders'
+  return t === 'profile' || t === 'addresses' ? 'profile' : 'orders'
 }
 
 // Trang /account: khách đăng ký / đăng nhập, quản lý sổ địa chỉ, xem đơn đã đặt
@@ -51,11 +52,10 @@ export default function AccountPage() {
               <button type="button" className="logout" onClick={logout}>Đăng xuất</button>
             </div>
             {user.role === 'admin' && <p className="muted">Bạn đang đăng nhập tài khoản quản trị · <a href="/admin">Vào trang quản trị</a></p>}
-            <div className="seg seg3">
+            <div className="seg">
               {TABS.map(([k, t]) => <button key={k} type="button" className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{t}</button>)}
             </div>
             {tab === 'orders' && <MyOrders cart={cart} />}
-            {tab === 'addresses' && <AddressBook user={user} setUser={setUser} />}
             {tab === 'profile' && <Profile user={user} setUser={setUser} />}
           </>
         )}
@@ -107,6 +107,7 @@ function MyOrders({ cart }) {
   )
 }
 
+// Sổ địa chỉ (nằm trong tab Thông tin tài khoản)
 function AddressBook({ user, setUser }) {
   const list = user.addresses || []
   const [edit, setEdit] = useState(null) // null | 'new' | id địa chỉ đang sửa
@@ -140,48 +141,59 @@ function AddressBook({ user, setUser }) {
     if (await persist(next)) setEdit(null)
   }
 
-  if (edit) {
-    return (
-      <form className="card" onSubmit={submit}>
-        <h3>{edit === 'new' ? 'Thêm địa chỉ mới' : 'Sửa địa chỉ'}</h3>
-        <label>Tên gợi nhớ<input value={f.label || ''} maxLength={30} onChange={(e) => setF({ ...f, label: e.target.value })} placeholder="Nhà riêng, Công ty…" /></label>
-        <RecipientFields value={f} onChange={setF} />
-        {err && <p className="err">{err}</p>}
-        <div className="row">
-          <button className="primary" disabled={busy}>{busy ? 'Đang lưu…' : 'Lưu địa chỉ'}</button>
-          <button type="button" onClick={() => setEdit(null)}>Hủy</button>
-        </div>
-      </form>
-    )
-  }
   return (
-    <>
+    <section className="card info-section" id="addresses">
+      <div className="info-head">
+        <h3>📍 Sổ địa chỉ <small className="muted">({list.length}/10)</small></h3>
+        {!edit && list.length < 10 && <button type="button" className="primary" onClick={() => open(null)}>＋ Thêm</button>}
+      </div>
       {err && <p className="err">{err}</p>}
-      {list.map((a) => (
-        <div key={a.id} className={'card addr-entry' + (a.isDefault ? ' on' : '')}>
-          <div>
-            <b>{a.name}</b> · {a.phone}{a.label && <span className="tag">{a.label}</span>}{a.isDefault && <span className="tag">Mặc định</span>}
-            <br /><small className="muted">{addrText(a)}</small>
+      {edit ? (
+        <form className="addr-form" onSubmit={submit}>
+          <b>{edit === 'new' ? 'Thêm địa chỉ mới' : 'Sửa địa chỉ'}</b>
+          <label>Tên gợi nhớ<input value={f.label || ''} maxLength={30} onChange={(e) => setF({ ...f, label: e.target.value })} placeholder="Nhà riêng, Công ty…" /></label>
+          <RecipientFields value={f} onChange={setF} />
+          <div className="row">
+            <button className="primary" disabled={busy}>{busy ? 'Đang lưu…' : 'Lưu địa chỉ'}</button>
+            <button type="button" onClick={() => setEdit(null)}>Hủy</button>
           </div>
-          <div className="row" style={{ margin: 0 }}>
-            <button type="button" onClick={() => open(a)}>Sửa</button>
-            {!a.isDefault && <button type="button" disabled={busy} onClick={() => persist(list.map((x) => ({ ...x, isDefault: x.id === a.id })))}>Đặt mặc định</button>}
-            <button type="button" disabled={busy} onClick={() => confirm('Xóa địa chỉ này?') && persist(list.filter((x) => x.id !== a.id))}>Xóa</button>
-          </div>
+        </form>
+      ) : (
+        <div className="addr-list">
+          {list.map((a) => (
+            <div key={a.id} className={'addr-entry' + (a.isDefault ? ' on' : '')}>
+              <div>
+                <b>{a.name}</b> · {a.phone}{a.label && <span className="tag">{a.label}</span>}{a.isDefault && <span className="tag">Mặc định</span>}
+                <br /><small className="muted">{addrText(a)}</small>
+              </div>
+              <div className="addr-actions">
+                <button type="button" onClick={() => open(a)}>Sửa</button>
+                {!a.isDefault && <button type="button" disabled={busy} onClick={() => persist(list.map((x) => ({ ...x, isDefault: x.id === a.id })))}>Mặc định</button>}
+                <button type="button" className="link-btn" disabled={busy} onClick={() => confirm('Xóa địa chỉ này?') && persist(list.filter((x) => x.id !== a.id))}>Xóa</button>
+              </div>
+            </div>
+          ))}
+          {!list.length && <p className="muted info-empty">Chưa có địa chỉ nào. Thêm địa chỉ để lần sau đặt hàng chỉ cần một chạm.</p>}
         </div>
-      ))}
-      {!list.length && <div className="card"><p className="muted">Chưa có địa chỉ nào. Thêm địa chỉ để lần sau đặt hàng chỉ cần một chạm.</p></div>}
-      {list.length < 10 && <button className="primary" type="button" onClick={() => open(null)}>＋ Thêm địa chỉ</button>}
-    </>
+      )}
+    </section>
   )
 }
 
+// Tab "Thông tin tài khoản": thông tin cá nhân + sổ địa chỉ + đổi mật khẩu (thu gọn)
 function Profile({ user, setUser }) {
   const [f, setF] = useState({ name: user.name || '', phone: user.phone || '' })
   const phoneLogin = /^0\d{9}$/.test(user.username)
   const [pw, setPw] = useState({ current: '', next: '' })
+  const [pwOpen, setPwOpen] = useState(false)
   const [msg, setMsg] = useState({ info: '', pw: '' })
   const [err, setErr] = useState({ info: '', pw: '' })
+  const dirty = f.name !== (user.name || '') || (!phoneLogin && f.phone !== (user.phone || ''))
+
+  // Link cũ /account/addresses → cuộn tới sổ địa chỉ
+  useEffect(() => {
+    if (location.pathname.endsWith('/addresses')) setTimeout(() => document.getElementById('addresses')?.scrollIntoView({ behavior: 'smooth' }), 100)
+  }, [])
 
   const saveInfo = async (e) => {
     e.preventDefault()
@@ -198,34 +210,47 @@ function Profile({ user, setUser }) {
       setPw({ current: '', next: '' })
       setErr((x) => ({ ...x, pw: '' }))
       setMsg((x) => ({ ...x, pw: 'Đã đổi mật khẩu' }))
+      setPwOpen(false)
     } catch (x) { setErr((y) => ({ ...y, pw: x.message })) }
   }
 
   return (
-    <div className="grid2 top">
-      <form className="card" onSubmit={saveInfo}>
-        <h3>Thông tin cá nhân</h3>
-        {phoneLogin
-          ? <label>Số điện thoại (dùng để đăng nhập)<input value={user.username} disabled /></label>
-          : (
-            <>
-              <label>Tên đăng nhập<input value={user.username} disabled /></label>
-              <label>Số điện thoại<input type="tel" inputMode="tel" autoComplete="tel" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></label>
-            </>
-          )}
-        <label>Họ tên<input autoComplete="name" value={f.name} placeholder="Để shop xưng hô và điền sẵn khi đặt hàng" onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
+    <div className="info-stack">
+      <form className="card info-section" onSubmit={saveInfo}>
+        <h3>👤 Thông tin cá nhân</h3>
+        <div className="grid2" style={{ gap: 12 }}>
+          <label>Họ tên<input autoComplete="name" value={f.name} placeholder="Để shop xưng hô & điền sẵn khi đặt" onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
+          {phoneLogin
+            ? <label>Số điện thoại đăng nhập<input value={user.username} disabled /></label>
+            : <label>Số điện thoại<input type="tel" inputMode="tel" autoComplete="tel" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></label>}
+        </div>
         {err.info && <p className="err">{err.info}</p>}
-        {msg.info && !err.info && <p className="ok">{msg.info}</p>}
-        <button className="primary">Lưu</button>
+        {msg.info && !err.info && !dirty && <p className="ok">✓ {msg.info}</p>}
+        {dirty && <div className="row"><button className="primary">Lưu thay đổi</button><button type="button" onClick={() => setF({ name: user.name || '', phone: user.phone || '' })}>Hủy</button></div>}
       </form>
-      <form className="card" onSubmit={savePw}>
-        <h3>Đổi mật khẩu</h3>
-        <label>Mật khẩu hiện tại<input type="password" autoComplete="current-password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} /></label>
-        <label>Mật khẩu mới<input type="password" autoComplete="new-password" minLength={6} value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} /></label>
-        {err.pw && <p className="err">{err.pw}</p>}
-        {msg.pw && !err.pw && <p className="ok">{msg.pw}</p>}
-        <button className="primary" disabled={!pw.current || pw.next.length < 6}>Đổi mật khẩu</button>
-      </form>
+
+      <AddressBook user={user} setUser={setUser} />
+
+      <section className="card info-section">
+        <div className="info-head">
+          <h3>🔒 Mật khẩu</h3>
+          {!pwOpen && <button type="button" onClick={() => { setPwOpen(true); setMsg((x) => ({ ...x, pw: '' })) }}>Đổi mật khẩu</button>}
+        </div>
+        {msg.pw && !pwOpen && <p className="ok">✓ {msg.pw}</p>}
+        {pwOpen && (
+          <form onSubmit={savePw} className="pw-form">
+            <div className="grid2" style={{ gap: 12 }}>
+              <label>Mật khẩu hiện tại<input type="password" autoComplete="current-password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} /></label>
+              <label>Mật khẩu mới (tối thiểu 6 ký tự)<input type="password" autoComplete="new-password" minLength={6} value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} /></label>
+            </div>
+            {err.pw && <p className="err">{err.pw}</p>}
+            <div className="row">
+              <button className="primary" disabled={!pw.current || pw.next.length < 6}>Lưu mật khẩu</button>
+              <button type="button" onClick={() => { setPwOpen(false); setPw({ current: '', next: '' }); setErr((x) => ({ ...x, pw: '' })) }}>Hủy</button>
+            </div>
+          </form>
+        )}
+      </section>
     </div>
   )
 }

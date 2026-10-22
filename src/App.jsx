@@ -2,12 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { BackButton, Brand, NumInput, ThemeToggle, pushPath, useTheme } from './ui'
 import {
   vnd, today, uid, rateOn, costVnd, orderTotals, copyForCustomer, DEFAULT_PRICING, priceBreakdown, FEE_MODES,
-  normalizeCfg, withCosts, fullAddress, STOCK_STATUS, ORDER_STATUS, STATUS_LABEL, normStatus, newTrackCode, SEED_PRODUCTS, DEFAULT_SHOP, usePersisted,
+  normalizeCfg, withCosts, fullAddress, STOCK_STATUS, ORDER_STATUS, STATUS_LABEL, normStatus, newTrackCode, SEED_PRODUCTS, DEFAULT_SHOP, usePersisted, depositEnabled, depositOf,
 } from './lib'
 import { ChatBox, OrderForm } from './Customer'
 import Links from './Links'
 import Workspace, { DEFAULT_LAYOUTS } from './Workspace'
-import Kanban, { orderMatches } from './Kanban'
+import Kanban, { Hl, STATUS_COLOR, orderMatches } from './Kanban'
+import OrderEditor from './OrderEditor'
 import { useShipping, ShippingConfig } from './Shipping'
 import ShopSettings from './ShopSettings'
 import Scan from './Scan'
@@ -15,15 +16,16 @@ import Bill from './Bill'
 import Payments from './Payments'
 import { BarChart, PieChart, Metrics, dashboardStats } from './charts'
 import { detectCnTracking, nearestWaitingOrder } from './track'
-import { useServerKV, useOrders } from './store'
+import { useServerKV, useOrders, useChats } from './store'
+import Inbox from './Inbox'
 
 const TABS = [
   ['work', 'Bàn làm việc'], ['stats', 'Thống kê'], ['catalog', 'Mẫu hàng'], ['links', 'Link đã lưu'], ['orders', 'Đơn hàng'],
-  ['scan', 'Quét mã'], ['pricing', 'Giá & Thuế'], ['shop', 'Cửa hàng'], ['form', 'Đặt hàng & Tư vấn'],
+  ['scan', 'Quét mã'], ['pricing', 'Giá & Thuế'], ['shop', 'Cửa hàng'], ['form', 'Đặt hàng & Tư vấn'], ['inbox', 'Tin nhắn'],
 ]
 // Menu bên trái: nhóm theo công việc, kèm biểu tượng và mô tả ngắn hiện ở đầu trang
 const NAV = [
-  ['Vận hành', [['work', 'layout', 'Đơn cần xử lý & bảng Kanban'], ['orders', 'orders', 'Theo dõi, giao hàng, in hóa đơn'], ['scan', 'scan', 'Quét tem để xuất kho'], ['form', 'chat', 'Tạo đơn nhanh & thử bot tư vấn']]],
+  ['Vận hành', [['work', 'layout', 'Đơn cần xử lý & bảng Kanban'], ['orders', 'orders', 'Theo dõi, giao hàng, in hóa đơn'], ['inbox', 'inbox', 'Khách cần nhân viên hỗ trợ trực tiếp'], ['scan', 'scan', 'Quét tem để xuất kho'], ['form', 'chat', 'Tạo đơn nhanh & thử bot tư vấn']]],
   ['Sản phẩm', [['catalog', 'box', 'Thêm, sửa mẫu và giá bán'], ['links', 'link', 'Link Taobao/1688 đã lưu & giá']]],
   ['Kinh doanh', [['stats', 'chart', 'Doanh thu, lợi nhuận, tồn kho'], ['pricing', 'percent', 'Tỷ giá, công thức giá, thuế']]],
   ['Cài đặt', [['shop', 'store', 'Ngân hàng, câu chốt đơn, bookmarklet']]],
@@ -41,6 +43,7 @@ const ICON = {
   percent: 'M19 5 5 19 M7.5 9.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M16.5 18.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
   store: 'M4 9.5 5.5 4h13L20 9.5 M4 9.5V20h16V9.5 M4 9.5h16 M9.5 20v-5h5v5',
   menu: 'M4 6h16 M4 12h16 M4 18h16',
+  inbox: 'M3 13h5l2 3h4l2-3h5 M5.5 5h13L21 13v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6z',
   plus: 'M12 5v14 M5 12h14',
   paste: 'M9 3h6v3H9z M8 4.5H6a1 1 0 0 0-1 1V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V5.5a1 1 0 0 0-1-1h-2 M12 10v7 M9 14l3 3 3-3',
   external: 'M14 4h6v6 M20 4l-9 9 M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
@@ -87,6 +90,8 @@ export default function App({ logout }) {
   const shop = { ...DEFAULT_SHOP, ...shopSaved }
   const [dark, setDark] = useTheme()
   const [q, setQ] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
+  const searchBox = useRef(null)
   const [modal, setModal] = useState(null)
   const [bill, setBill] = useState(null)
   const [suggest, setSuggest] = useState(null)
@@ -118,8 +123,46 @@ export default function App({ logout }) {
     })), [setOrders])
 
   const sh = useShipping(patchOrder)
+  const chats = useChats()
+  const badge = (id) => (id === 'orders' ? newCount : id === 'inbox' ? chats.unread : 0)
+  // Có khách mới cần nhân viên → báo ngay dù đang ở tab khác
+  const prevWaiting = useRef(null)
+  useEffect(() => {
+    const ids = chats.list.filter((c) => c.status === 'waiting' && c.unread).map((c) => c.id)
+    const prev = prevWaiting.current
+    prevWaiting.current = new Set(ids)
+    if (!prev) return
+    const fresh = chats.list.filter((c) => ids.includes(c.id) && !prev.has(c.id))
+    if (fresh.length) notify(`💬 ${fresh.map((c) => c.name).join(', ')} cần nhân viên hỗ trợ — xem ở Tin nhắn`)
+  }, [chats.list, notify])
   const shown = orders.filter((o) => orderMatches(o, q))
-  const ctx = { products, shop, sh, patchOrder, onBill: setBill, notify, onEdit: (o) => setModal({ edit: o.id }) }
+  const found = q.trim() ? shown.slice(0, 8) : []
+  // Bấm ra ngoài thì thu bảng kết quả tìm kiếm
+  useEffect(() => {
+    if (!searchOpen) return
+    const on = (e) => { if (!searchBox.current?.contains(e.target)) setSearchOpen(false) }
+    document.addEventListener('mousedown', on)
+    return () => document.removeEventListener('mousedown', on)
+  }, [searchOpen])
+  const editOrder = (o) => { setSearchOpen(false); setModal({ edit: o.id }) }
+  // Hủy đơn: hỏi lý do (có thể bỏ trống), giữ lại đơn để còn tra cứu
+  const cancelOrder = (o) => {
+    const reason = prompt(`Hủy đơn ${o.id} của ${o.customer.name}?\nLý do hủy (có thể để trống):`, '')
+    if (reason === null) return
+    patchOrder(o.id, { status: 'Đã hủy', cancelReason: reason.trim().slice(0, 200), canceledAt: new Date().toISOString() })
+    if (modal?.edit === o.id) setModal(null)
+    notify(`Đã hủy đơn ${o.id}`)
+  }
+  // Lưu đơn đã sửa: mẫu mới thêm được tính giá vốn; đơn chờ cọc tính lại số tiền cọc theo tổng mới
+  const saveEdit = (o, p) => {
+    const priced = withCosts({ ...o, items: p.items }, products, rates, cfg).items
+    const patch = { ...p, items: p.items.map((i, k) => (i.cost != null ? i : priced[k])) }
+    if (normStatus(o.status) === 'Chờ cọc' && depositEnabled(shop)) patch.depositDue = depositOf(orderTotals({ ...o, ...patch }).revenue, shop.depositPct)
+    patchOrder(o.id, patch)
+    setModal(null)
+    notify(`Đã lưu đơn ${o.id}`)
+  }
+  const ctx = { products, shop, sh, patchOrder, onBill: setBill, notify, onEdit: editOrder, onCancel: cancelOrder, q }
 
   // Báo cho shop khi đơn vừa đủ cọc (SePay xác nhận tự động)
   const prevStatus = useRef(null)
@@ -140,7 +183,7 @@ export default function App({ logout }) {
     const o = nearestWaitingOrder(ordersRef.current)
     if (!o) return notify(`Mã ${hit.code} (${hit.carrier}) nhưng không còn đơn nào đang chờ gán`)
     setSuggest({ ...hit, orderId: o.id })
-  }, [notify])
+  }, [notify, setSuggest])
   const readClipboard = async () => {
     try { detect(await navigator.clipboard.readText(), true) } catch { notify('Trình duyệt chặn đọc clipboard, hãy dán (Ctrl+V) vào trang') }
   }
@@ -196,7 +239,7 @@ export default function App({ logout }) {
                 <button key={id} type="button" className={'side-item' + (id === tab ? ' active' : '')} onClick={() => go(id)} title={collapsed ? TAB_LABEL[id] : undefined} aria-current={id === tab ? 'page' : undefined}>
                   <Icon name={icon} />
                   <span className="side-label">{TAB_LABEL[id]}</span>
-                  {id === 'orders' && newCount > 0 && <span className="new-dot" key={newCount}>{newCount}</span>}
+                  {badge(id) > 0 && <span className="new-dot" key={badge(id)}>{badge(id)}</span>}
                 </button>
               ))}
             </div>
@@ -221,10 +264,15 @@ export default function App({ logout }) {
           <h1>{TAB_LABEL[tab]}</h1>
           <small className="muted">{TAB_DESC[tab]}</small>
         </div>
-        <label className="admin-search">
-          <Icon name="search" size={18} />
-          <input ref={searchRef} type="search" placeholder="Tìm khách, SĐT, mã đơn… (Ctrl+F)" aria-label="Tìm đơn hàng" value={q} onChange={(e) => setQ(e.target.value)} />
-        </label>
+        <div className="search-wrap" ref={searchBox}>
+          <label className="admin-search">
+            <Icon name="search" size={18} />
+            <input ref={searchRef} type="search" placeholder="Tìm khách, SĐT, mã đơn… (Ctrl+F)" aria-label="Tìm đơn hàng" value={q}
+              onChange={(e) => { setQ(e.target.value); setSearchOpen(true) }} onFocus={() => setSearchOpen(true)}
+              onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setSearchOpen(false) } if (e.key === 'Enter' && found[0]) editOrder(found[0]) }} />
+          </label>
+          {searchOpen && q.trim() && <SearchResults q={q} found={found} total={shown.length} onPick={editOrder} onAll={() => { setSearchOpen(false); go('orders') }} />}
+        </div>
         <button type="button" className="icon-btn" onClick={readClipboard} title="Dán mã vận đơn TQ từ clipboard" aria-label="Dán mã vận đơn TQ"><Icon name="paste" /></button>
         <ThemeToggle dark={dark} setDark={setDark} />
         <button className="primary new-order" onClick={() => setModal('new')} title="Ctrl+N hoặc Alt+N"><Icon name="plus" size={18} /><span>Đơn mới</span></button>
@@ -244,8 +292,9 @@ export default function App({ logout }) {
         {tab === 'links' && <Links products={products} setProducts={setProducts} rate={rate} cfg={cfg} />}
         {tab === 'orders' && <Orders orders={shown} ctx={ctx} />}
         {tab === 'scan' && <Scan orders={orders} patchOrder={patchOrder} />}
+        {tab === 'inbox' && <Inbox chats={chats} notify={notify} onFindOrders={(phone) => { setQ(phone); go('orders') }} />}
         {tab === 'pricing' && <Pricing rates={rates} setRates={setRates} cfg={cfg} setCfg={setCfg} orders={orders} setOrders={setOrders} />}
-        {tab === 'shop' && <ShopSettings shop={shop} setShop={setShop} products={products} notify={notify} />}
+        {tab === 'shop' && <ShopSettings shop={shop} setShop={setShop} notify={notify} />}
         {tab === 'form' && (
           <div className="grid2 top">
             <OrderForm products={products} onSubmit={addOrder} pick={pick} smart />
@@ -262,7 +311,7 @@ export default function App({ logout }) {
           </button>
         ))}
         <button type="button" className="tabbar-new" onClick={() => setModal('new')} aria-label="Tạo đơn mới"><Icon name="plus" size={26} /></button>
-        <button type="button" className={tab === 'scan' ? 'on' : ''} onClick={() => go('scan')}><Icon name="scan" /><span>Quét mã</span></button>
+        <button type="button" className={tab === 'inbox' ? 'on' : ''} onClick={() => go('inbox')}><Icon name="inbox" /><span>Tin nhắn</span>{chats.unread > 0 && <i className="new-dot">{chats.unread}</i>}</button>
         <button type="button" onClick={() => setDrawer(true)}><Icon name="menu" /><span>Menu</span></button>
       </nav>
 
@@ -274,26 +323,31 @@ export default function App({ logout }) {
           </div>
         </div>
       )}
-      {editing && <EditOrder o={editing} onClose={() => setModal(null)} onSave={(p) => { patchOrder(editing.id, p); setModal(null) }} />}
+      {editing && <OrderEditor o={editing} products={products} onClose={() => setModal(null)} onSave={(p) => saveEdit(editing, p)} onCancel={cancelOrder} />}
       {bill && <Bill order={bill} shop={shop} onClose={() => setBill(null)} />}
       {toast && <div className="toast">{toast}</div>}
     </div>
   )
 }
 
-function EditOrder({ o, onClose, onSave }) {
-  const [f, setF] = useState({ note: o.note || '', cnTracking: o.cnTracking || '', cnCarrier: o.cnCarrier || '', deposit: o.deposit || 0 })
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
+// Kết quả tìm kiếm nổi bật ngay dưới ô tìm: tô sáng phần khớp, bấm để mở sửa đơn
+function SearchResults({ q, found, total, onPick, onAll }) {
   return (
-    <div className="modal" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <form className="modal-box card" onSubmit={(e) => { e.preventDefault(); onSave({ ...f, deposit: Number(f.deposit) || 0 }) }}>
-        <h3>Sửa đơn {o.id}</h3>
-        <label>Mã vận đơn TQ<input value={f.cnTracking} onChange={set('cnTracking')} /></label>
-        <label>Hãng TQ<input value={f.cnCarrier} onChange={set('cnCarrier')} placeholder="YTO, ZTO, STO…" /></label>
-        <label>Tiền cọc (đ)<input type="number" min="0" value={f.deposit} onChange={set('deposit')} /></label>
-        <label>Ghi chú<textarea rows="3" value={f.note} onChange={set('note')} /></label>
-        <div className="row"><button className="primary">Lưu (Ctrl+S)</button><button type="button" onClick={onClose}>Hủy</button></div>
-      </form>
+    <div className="search-results" role="listbox" aria-label="Kết quả tìm kiếm">
+      <div className="sr-head"><b>{total} đơn khớp “{q.trim()}”</b><small className="muted">Enter để mở đơn đầu · Esc để đóng</small></div>
+      {found.map((o) => {
+        const st = normStatus(o.status)
+        return (
+          <button key={o.id} type="button" className="sr-item" role="option" onClick={() => onPick(o)} style={{ '--c': STATUS_COLOR[st] }}>
+            <span className="sr-top"><b><Hl text={o.id} q={q} /></b><span className="sr-status"><i className="kdot" />{STATUS_LABEL[st]}</span></span>
+            <span className="sr-name"><Hl text={o.customer.name} q={q} /> · <Hl text={o.customer.phone} q={q} /></span>
+            <small className="muted sr-sub"><Hl text={o.items.map((i) => `${i.name} ×${i.qty}`).join(', ')} q={q} /></small>
+            <span className="sr-total">{vnd(orderTotals(o).revenue)}</span>
+          </button>
+        )
+      })}
+      {!found.length && <p className="muted sr-empty">Không tìm thấy đơn nào. Thử tên không dấu, 4 số cuối SĐT hoặc mã đơn.</p>}
+      {total > found.length && <button type="button" className="sr-all" onClick={onAll}>Xem tất cả {total} đơn trong tab Đơn hàng →</button>}
     </div>
   )
 }
@@ -411,7 +465,7 @@ function Catalog({ products, setProducts, rate, cfg }) {
 /* ---------- Orders ---------- */
 function Orders({ orders, ctx }) {
   const [view, setView] = useState('kanban')
-  const { sh, patchOrder, onBill, notify } = ctx
+  const { sh, patchOrder, onBill, notify, onEdit, onCancel, q } = ctx
 
   return (
     <>
@@ -430,8 +484,8 @@ function Orders({ orders, ctx }) {
                 const t = orderTotals(o)
                 return (
                   <tr key={o.id}>
-                    <td>{o.id}<br /><small>{o.createdAt}</small></td>
-                    <td>{o.customer.name}<br /><small>{o.customer.phone}</small><br /><small>{fullAddress(o.customer)}</small></td>
+                    <td><b><Hl text={o.id} q={q} /></b><br /><small>{o.createdAt}</small></td>
+                    <td><Hl text={o.customer.name} q={q} /><br /><small><Hl text={o.customer.phone} q={q} /></small><br /><small>{fullAddress(o.customer)}</small></td>
                     <td>{o.items.map((i) => `${i.name} (${i.size}/${i.color}) x${i.qty}`).join('; ')}</td>
                     <td>{vnd(t.revenue)}</td>
                     <td>{vnd(o.deposit)}</td>
@@ -442,7 +496,9 @@ function Orders({ orders, ctx }) {
                       {o.tracking ? <>{o.carrier}: {o.tracking}<br /><a href={o.waybillUrl} target="_blank" rel="noreferrer">In tem</a></> : '—'}
                     </td>
                     <td>
+                      <button onClick={() => onEdit(o)} title="Sửa đơn">✏️ Sửa</button>
                       <button onClick={() => onBill(o)}>🧾 Bill</button>
+                      {!['Hoàn thành', 'Đã hủy'].includes(normStatus(o.status)) && <button className="cancel-btn" onClick={() => onCancel(o)} title="Hủy đơn">✕ Hủy</button>}
                       {!o.tracking && !['Hoàn thành', 'Đã hủy'].includes(o.status) && <button className="primary" disabled={sh.busy === o.id} onClick={() => sh.ship(o)}>{sh.busy === o.id ? '…' : 'Giao hàng'}</button>}
                       {o.tracking && o.status === 'Đang giao' && <button onClick={() => sh.simulateWebhook(o)}>Giả lập "đã giao"</button>}
                       {o.trackCode && <button onClick={() => navigator.clipboard.writeText(`${location.origin}/track/${o.trackCode}`).then(() => notify('Đã copy link theo dõi'))}>🔗</button>}

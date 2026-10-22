@@ -152,7 +152,7 @@ export default function Shop() {
         </div>
       </main>
       {picking && <ProductPicker product={picking.product} mode={picking.mode} onAdd={onAdd} onClose={() => setPicking(null)} />}
-      <ChatWidget products={products} onBuy={(id) => open(id, 'buy')} />
+      <ChatWidget products={products} user={user} onBuy={(id) => open(id, 'buy')} />
       {toast && <div className="toast">{toast} <a href="/cart">Xem giỏ →</a></div>}
       <BottomBar active="shop" cartCount={cart.count} />
     </div>

@@ -10,9 +10,13 @@ const PHONE_RE = /^0\d{9}$/
 // Chọn size / màu / số lượng trước khi cho vào giỏ
 // mode 'buy': nút chính là "Đặt hàng ngay" (chuyển sang giỏ); 'cart': nút chính là "Thêm vào giỏ"
 export function ProductPicker({ product: p, onAdd, onClose, mode = 'cart' }) {
-  const [size, setSize] = useState(p.sizes[0] || '')
-  const [color, setColor] = useState(p.colors[0] || '')
+  // Không tự chọn sẵn: khách phải tự bấm size/màu (chỉ tự chọn khi mẫu có đúng 1 lựa chọn)
+  const [size, setSize] = useState(p.sizes.length === 1 ? p.sizes[0] : '')
+  const [color, setColor] = useState(p.colors.length === 1 ? p.colors[0] : '')
   const [qty, setQty] = useState(1)
+  const [tried, setTried] = useState(false)
+  const needSize = p.sizes.length > 0 && !size
+  const needColor = p.colors.length > 0 && !color
 
   useEffect(() => {
     const on = (e) => e.key === 'Escape' && onClose()
@@ -20,7 +24,10 @@ export function ProductPicker({ product: p, onAdd, onClose, mode = 'cart' }) {
     return () => window.removeEventListener('keydown', on)
   }, [onClose])
 
-  const add = (buyNow) => onAdd({ productId: p.id, size, color, qty }, buyNow)
+  const add = (buyNow) => {
+    if (needSize || needColor) return setTried(true)
+    onAdd({ productId: p.id, size, color, qty }, buyNow)
+  }
   return (
     <div className="modal" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal-box card picker" role="dialog" aria-label={`Chọn phân loại ${p.name}`}>
@@ -35,16 +42,17 @@ export function ProductPicker({ product: p, onAdd, onClose, mode = 'cart' }) {
         </div>
         {p.sizes.length > 0 && (
           <>
-            <h4>Size</h4>
-            <div className="chips">{p.sizes.map((s) => <button key={s} type="button" className={s === size ? 'on' : ''} onClick={() => setSize(s)}>{s}</button>)}</div>
+            <h4>Size {tried && needSize && <span className="err pick-err">· Vui lòng chọn size</span>}</h4>
+            <div className={'chips' + (tried && needSize ? ' need' : '')}>{p.sizes.map((s) => <button key={s} type="button" className={s === size ? 'on' : ''} onClick={() => setSize(s)}>{s}</button>)}</div>
           </>
         )}
         {p.colors.length > 0 && (
           <>
-            <h4>Màu</h4>
-            <div className="chips">{p.colors.map((c) => <button key={c} type="button" className={c === color ? 'on' : ''} onClick={() => setColor(c)}>{c}</button>)}</div>
+            <h4>Màu {tried && needColor && <span className="err pick-err">· Vui lòng chọn màu</span>}</h4>
+            <div className={'chips' + (tried && needColor ? ' need' : '')}>{p.colors.map((c) => <button key={c} type="button" className={c === color ? 'on' : ''} onClick={() => setColor(c)}>{c}</button>)}</div>
           </>
         )}
+        {!tried && (needSize || needColor) && <small className="muted">Chọn {[needSize && 'size', needColor && 'màu'].filter(Boolean).join(' và ')} để tiếp tục</small>}
         <h4>Số lượng</h4>
         <Stepper value={qty} onChange={setQty} />
         <div className="row picker-actions">

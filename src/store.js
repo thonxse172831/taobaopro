@@ -6,7 +6,7 @@ let cache = {}
 export const loadAdminState = async () => { cache = await api('/admin/state') }
 
 // Một kết nối SSE dùng chung cho mọi hook
-const listeners = { orders: new Set(), state: new Set(), payments: new Set(), open: new Set() }
+const listeners = { orders: new Set(), state: new Set(), payments: new Set(), chats: new Set(), open: new Set() }
 let es
 function ensureStream() {
   if (es) return
@@ -14,6 +14,7 @@ function ensureStream() {
   es.addEventListener('orders', () => listeners.orders.forEach((f) => f()))
   es.addEventListener('state', () => listeners.state.forEach((f) => f()))
   es.addEventListener('payments', () => listeners.payments.forEach((f) => f()))
+  es.addEventListener('chats', () => listeners.chats.forEach((f) => f()))
   es.onopen = () => listeners.open.forEach((f) => f())
 }
 function subscribe(ev, fn) {
@@ -63,6 +64,18 @@ export function usePayments() {
     return () => offs.forEach((f) => f())
   }, [reload])
   return { list, reload }
+}
+
+// Hộp tin nhắn khách cần hỗ trợ trực tiếp, cập nhật ngay khi khách nhắn
+export function useChats() {
+  const [list, setList] = useState([])
+  const reload = useCallback(() => api('/admin/chats').then(setList).catch(() => {}), [])
+  useEffect(() => {
+    reload()
+    const offs = [subscribe('chats', reload), subscribe('open', reload)]
+    return () => offs.forEach((f) => f())
+  }, [reload])
+  return { list, reload, unread: list.reduce((n, c) => n + (c.unread || 0), 0), waiting: list.filter((c) => c.status === 'waiting').length }
 }
 
 // Đơn hàng: ghi từng đơn (khách có thể đặt đơn mới bất kỳ lúc nào), realtime qua SSE

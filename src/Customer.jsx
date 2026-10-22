@@ -3,6 +3,7 @@ import { vnd, uid, today, STOCK_STATUS, ETA } from './lib'
 import { AddressPicker, EMPTY_ADDR, addrError, useVnData } from './address'
 import { smartParse } from './smartpaste'
 import { ScanIcon } from './ui'
+import { needsHuman, useLiveChat } from './livechat'
 
 const MAX_CARDS = 6
 
@@ -56,23 +57,80 @@ function ChatProduct({ p, onBuy }) {
 
 const MAX_IMAGE = 12 * 1024 * 1024
 const GREETING = { from: 'bot', text: 'Xin chào! Bạn cần tư vấn mẫu nào ạ? Bạn cũng có thể gửi ảnh để mình quét tìm mẫu giống.' }
+const FALLBACK = 'Mình chưa rõ ý bạn'
+const HANDOFF_TEXT = 'Vấn đề này nhân viên shop sẽ hỗ trợ bạn tốt hơn. Mình kết nối bạn với nhân viên ngay nhé?'
+const LIVE_STATUS = {
+  waiting: '⏳ Đang chờ nhân viên… shop thường trả lời trong vài phút',
+  open: '🟢 Nhân viên shop đang hỗ trợ bạn',
+  closed: 'Cuộc trò chuyện đã kết thúc · nhắn tiếp nếu cần hỗ trợ',
+}
+const hasPhone = (u) => !!(u?.phone || /^0\d{9}$/.test(u?.username || ''))
+
+// Form nhỏ trong khung chat: khách vãng lai để lại tên + SĐT để shop liên hệ khi chưa kịp trả lời
+function ContactForm({ onSubmit, onCancel, busy }) {
+  const [f, setF] = useState({ name: '', phone: '' })
+  return (
+    <form className="chat-contact" onSubmit={(e) => { e.preventDefault(); onSubmit(f) }}>
+      <b>Để lại thông tin để nhân viên hỗ trợ bạn</b>
+      <input required placeholder="Tên của bạn" autoComplete="name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
+      <input required type="tel" inputMode="tel" autoComplete="tel" placeholder="Số điện thoại" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
+      <div className="row">
+        <button className="primary" disabled={busy}>{busy ? 'Đang kết nối…' : 'Kết nối nhân viên'}</button>
+        <button type="button" onClick={onCancel}>Để sau</button>
+      </div>
+    </form>
+  )
+}
 
 // onBuy(productId): khi khách bấm "Đặt hàng" trên thẻ mẫu trong khung chat
-export function ChatBox({ products, onBuy, onClose, title = '💬 Tư vấn tự động' }) {
+// live (từ useLiveChat): bật chuyển sang nhân viên khi bot nhận ra khách cần người thật hỗ trợ
+export function ChatBox({ products, onBuy, onClose, title = '💬 Tư vấn tự động', live, user }) {
   const [msgs, setMsgs] = useState([GREETING])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const [asking, setAsking] = useState(null) // đang hỏi tên + SĐT: { reason }
+  const [connecting, setConnecting] = useState(false)
+  const misses = useRef(0)
   const box = useRef(null)
   const file = useRef(null)
+  const liveChat = live?.chat
   useEffect(() => {
     box.current?.scrollTo({ top: box.current.scrollHeight, behavior: 'smooth' })
-  }, [msgs])
+  }, [msgs, liveChat?.messages?.length, asking])
 
-  const ask = (text) => {
+  const say = (m) => setMsgs((xs) => [...xs, m])
+  const connect = async (reason, info = {}) => {
+    if (!hasPhone(user) && !info.phone) return setAsking({ reason })
+    setConnecting(true)
+    try {
+      const history = msgs.filter((m) => (m.from === 'me' || m.from === 'bot') && m.text && !m.handoff).slice(-20).map(({ from, text }) => ({ from, text }))
+      await live.start({ ...info, reason, history })
+      setAsking(null)
+    } catch (x) {
+      say({ from: 'bot', text: x.message || 'Chưa kết nối được, bạn thử lại nhé.' })
+    } finally {
+      setConnecting(false)
+    }
+  }
+
+  const ask = async (text) => {
     if (!text.trim()) return
-    const r = reply(text, products)
-    setMsgs((m) => [...m, { from: 'me', text }, { from: 'bot', text: r.text, ids: r.products.map((p) => p.id) }])
     setInput('')
+    if (liveChat) {
+      try { await live.send(text) } catch (x) { say({ from: 'bot', text: x.message }) }
+      return
+    }
+    const r = reply(text, products)
+    misses.current = r.text.startsWith(FALLBACK) ? misses.current + 1 : 0
+    const next = [{ from: 'me', text }, { from: 'bot', text: r.text, ids: r.products.map((p) => p.id) }]
+    // Khách cần người thật (khiếu nại, đổi trả, gặp nhân viên…) hoặc bot không hiểu 2 lần liên tiếp → đề nghị gặp nhân viên
+    if (live && (needsHuman(text) || misses.current >= 2)) {
+      const offer = { from: 'bot', text: HANDOFF_TEXT, handoff: text }
+      if (r.products.length) next.push(offer)
+      else next[1] = offer
+      misses.current = 0
+    }
+    setMsgs((m) => [...m, ...next])
   }
 
   // Khách gửi ảnh: so khớp ngay trên máy với ảnh mẫu của shop (không tải ảnh lên server)
@@ -100,13 +158,24 @@ export function ChatBox({ products, onBuy, onClose, title = '💬 Tư vấn tự
   }
 
   return (
-    <div className="card chat">
+    <div className={'card chat' + (liveChat ? ' live' : '')}>
       <div className="chat-head">
-        <h3>{title}</h3>
+        <h3>{liveChat ? '👩‍💼 Nhân viên shop' : title}</h3>
+        {live && !liveChat && <button type="button" className="human-btn" onClick={() => connect('Khách bấm gặp nhân viên')} disabled={connecting} title="Chat trực tiếp với nhân viên shop">👩‍💼 Gặp nhân viên</button>}
         {onClose && <button type="button" className="icon-btn" onClick={onClose} aria-label="Thu nhỏ khung tư vấn">✕</button>}
       </div>
+      {liveChat && <div className={'live-status ' + liveChat.status}>{LIVE_STATUS[liveChat.status]}</div>}
       <div className="msgs" ref={box} aria-live="polite">
-        {msgs.map((m, i) => {
+        {liveChat ? liveChat.messages.map((m, i) => (
+          m.from === 'system'
+            ? <div key={i} className="msg-system">{m.text}</div>
+            : (
+              <div key={i} className={'msg-group ' + (m.from === 'me' ? 'me' : 'bot')}>
+                {m.from === 'shop' && <small className="msg-who">Shop</small>}
+                <div className={'msg ' + (m.from === 'me' ? 'me' : 'bot') + (m.from === 'shop' ? ' shop' : '')}>{m.text}</div>
+              </div>
+            )
+        )) : msgs.map((m, i) => {
           // Lấy mẫu theo id từ danh sách hiện tại để giá/ảnh luôn mới, mẫu đã xóa thì ẩn
           const cards = (m.ids || []).map((id) => products.find((p) => p.id === id)).filter(Boolean)
           return (
@@ -115,25 +184,34 @@ export function ChatBox({ products, onBuy, onClose, title = '💬 Tư vấn tự
                 ? <img className="msg-image" src={m.image} alt="Ảnh bạn gửi" />
                 : <div className={'msg ' + m.from + (m.pending ? ' typing' : '')}>{m.pending && <span className="spinner" aria-hidden="true" />}{m.text}</div>}
               {cards.length > 0 && <div className="chat-products">{cards.map((p) => <ChatProduct key={p.id} p={p} onBuy={onBuy} />)}</div>}
+              {m.handoff && live && i === msgs.length - 1 && !asking && (
+                <div className="handoff">
+                  <button type="button" className="primary" disabled={connecting} onClick={() => connect(m.handoff)}>{connecting ? 'Đang kết nối…' : '👩‍💼 Kết nối nhân viên'}</button>
+                  <button type="button" onClick={() => say({ from: 'bot', text: 'Dạ vâng, bạn cứ hỏi tiếp nhé!' })}>Tiếp tục với bot</button>
+                </div>
+              )}
             </div>
           )
         })}
+        {asking && !liveChat && <ContactForm busy={connecting} onSubmit={(info) => connect(asking.reason, info)} onCancel={() => setAsking(null)} />}
       </div>
-      <div className="chips">{QUICK.map((q) => <button key={q} type="button" onClick={() => ask(q)}>{q}</button>)}</div>
+      {liveChat?.status === 'closed' && <button type="button" className="link-btn back-bot" onClick={live.forget}>← Quay lại trò chuyện với bot</button>}
+      {!liveChat && <div className="chips">{QUICK.map((q) => <button key={q} type="button" onClick={() => ask(q)}>{q}</button>)}</div>}
       <form onSubmit={(e) => { e.preventDefault(); ask(input) }} className="chat-input">
-        <input ref={file} type="file" accept="image/*" hidden onChange={(e) => { sendImage(e.target.files[0]); e.target.value = '' }} />
-        <button type="button" className="icon-btn scan-btn" onClick={() => file.current?.click()} disabled={busy || !products.length} title="Gửi ảnh để tìm mẫu giống" aria-label="Gửi ảnh để tìm mẫu giống"><ScanIcon size={22} busy={busy} /></button>
-        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Hỏi giá, size, thời gian giao…" aria-label="Nội dung tin nhắn" />
+        {!liveChat && <input ref={file} type="file" accept="image/*" hidden onChange={(e) => { sendImage(e.target.files[0]); e.target.value = '' }} />}
+        {!liveChat && <button type="button" className="icon-btn scan-btn" onClick={() => file.current?.click()} disabled={busy || !products.length} title="Gửi ảnh để tìm mẫu giống" aria-label="Gửi ảnh để tìm mẫu giống"><ScanIcon size={22} busy={busy} /></button>}
+        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={liveChat ? 'Nhắn cho nhân viên shop…' : 'Hỏi giá, size, thời gian giao…'} aria-label="Nội dung tin nhắn" />
         <button className="primary" disabled={!input.trim()}>Gửi</button>
       </form>
     </div>
   )
 }
 
-// Tư vấn thu nhỏ thành nút tròn góc phải; bấm để mở khung chat
-export function ChatWidget({ products, onBuy }) {
+// Tư vấn thu nhỏ thành nút tròn góc phải; bấm để mở khung chat. Shop trả lời khi đang thu nhỏ thì nút hiện số tin mới
+export function ChatWidget({ products, onBuy, user }) {
   const [open, setOpen] = useState(false)
   const [seen, setSeen] = useState(false)
+  const live = useLiveChat(open)
   useEffect(() => {
     if (!open) return
     const on = (e) => e.key === 'Escape' && setOpen(false)
@@ -143,17 +221,18 @@ export function ChatWidget({ products, onBuy }) {
   return (
     <>
       <div className={'chat-float' + (open ? ' open' : '')} role="dialog" aria-label="Tư vấn tự động" aria-hidden={!open}>
-        <ChatBox products={products} onClose={() => setOpen(false)} onBuy={(id) => { setOpen(false); onBuy(id) }} />
+        <ChatBox products={products} live={live} user={user} onClose={() => setOpen(false)} onBuy={(id) => { setOpen(false); onBuy(id) }} />
       </div>
       <button
         type="button"
         className={'chat-fab' + (open ? ' open' : '')}
         onClick={() => { setOpen(!open); setSeen(true) }}
-        aria-label={open ? 'Thu nhỏ khung tư vấn' : 'Mở tư vấn tự động'}
+        aria-label={open ? 'Thu nhỏ khung tư vấn' : live.unread ? `Mở chat, ${live.unread} tin mới từ shop` : 'Mở tư vấn tự động'}
         aria-expanded={open}
       >
-        <span aria-hidden="true">{open ? '✕' : '💬'}</span>
-        {!seen && !open && <i className="chat-fab-dot" aria-hidden="true" />}
+        <span aria-hidden="true">{open ? '✕' : live.chat ? '👩‍💼' : '💬'}</span>
+        {!open && live.unread > 0 && <i className="chat-fab-count" key={live.unread}>{live.unread}</i>}
+        {!seen && !open && !live.unread && <i className="chat-fab-dot" aria-hidden="true" />}
       </button>
     </>
   )

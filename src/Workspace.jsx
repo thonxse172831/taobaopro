@@ -29,7 +29,7 @@ const isUrgent = (o) => {
 
 function Widget({ id, c }) {
   const stats = dashboardStats(c.products, c.orders, c.rate, c.cfg)
-  const cardProps = { products: c.products, shop: c.shop, sh: c.sh, patchOrder: c.patchOrder, onBill: c.onBill, notify: c.notify, onEdit: c.onEdit }
+  const cardProps = { products: c.products, shop: c.shop, sh: c.sh, patchOrder: c.patchOrder, onBill: c.onBill, notify: c.notify, onEdit: c.onEdit, onCancel: c.onCancel, q: c.q }
   if (id === 'urgent') {
     const list = c.orders.filter(isUrgent)
     return (
