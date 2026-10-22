@@ -36,6 +36,7 @@ export default function App({ logout }) {
   const [modal, setModal] = useState(null)
   const [bill, setBill] = useState(null)
   const [suggest, setSuggest] = useState(null)
+  const [pick, setPick] = useState(null)
   const [toast, setToast] = useState('')
   const searchRef = useRef(null)
   const toastTimer = useRef(null)
@@ -153,8 +154,8 @@ export default function App({ logout }) {
         {tab === 'shop' && <ShopSettings shop={shop} setShop={setShop} products={products} notify={notify} />}
         {tab === 'form' && (
           <div className="grid2 top">
-            <OrderForm products={products} onSubmit={addOrder} smart />
-            <ChatBox products={products} />
+            <OrderForm products={products} onSubmit={addOrder} pick={pick} smart />
+            <ChatBox products={products} onBuy={(id) => { setPick({ id, n: Date.now() }); document.getElementById('order-form')?.scrollIntoView({ behavior: 'smooth' }) }} />
           </div>
         )}
       </main>

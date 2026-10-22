@@ -77,7 +77,7 @@ export default function Shop() {
           <OrderForm products={products} onSubmit={submit} pick={pick} showDeposit={false} />
           <div className={'chat-wrap sticky' + (chatOpen ? ' open' : '')}>
             <button type="button" className="sheet-close" onClick={() => setChatOpen(false)}>✕ Đóng</button>
-            <ChatBox products={products} />
+            <ChatBox products={products} onBuy={(id) => { setChatOpen(false); buy(id) }} />
           </div>
         </div>
       </main>

@@ -47,6 +47,16 @@ tr:last-child td{border-bottom:0}
 .msg.bot{background:var(--surface);border:1px solid var(--border);align-self:flex-start;border-bottom-left-radius:4px}
 .msg.me{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
 .chat input{flex:1}
+.msg-group{display:flex;flex-direction:column;gap:6px}
+.msg-group.bot{align-items:flex-start}.msg-group.me{align-items:flex-end}
+.chat-products{display:flex;flex-direction:column;gap:6px;width:min(100%,340px)}
+.chat-product{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:8px}
+.chat-product img,.chat-noimg{width:60px;height:60px;flex:none;object-fit:cover;border-radius:10px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:22px}
+.chat-product-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.chat-product-info b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-product .price{font-size:15px}
+.chat-product-info small{font-size:11px}
+.chat-product button{flex:none;padding:7px 12px;font-size:13px}
 .legend{list-style:none;padding:0;margin:0}.legend li{margin:6px 0}.legend span{display:inline-block;width:12px;height:12px;border-radius:4px;margin-right:8px}
 svg text{fill:var(--muted)}
 ul{padding-left:18px}
