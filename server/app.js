@@ -8,6 +8,7 @@ import compression from 'compression'
 import rateLimit from 'express-rate-limit'
 import { openDb } from './db.js'
 import { createAuth, hashPassword, verifyPassword } from './auth.js'
+import { createCaptcha } from './captcha.js'
 import {
   withCosts, normalizeCfg, DEFAULT_PRICING, SEED_PRODUCTS, priceBreakdown, rateOn, orderTotals, trackStep, TRACK_STEPS, STATUS_LABEL, normStatus,
   DEFAULT_SHOP, BANKS, depositOf, depositEnabled, DEPOSIT_TTL_HOURS,
@@ -49,6 +50,12 @@ const openStream = (ch) => (req, res) => {
 }
 
 const clip = (v, n) => String(v ?? '').trim().slice(0, n)
+// Chuẩn hóa SĐT di động VN về dạng 0xxxxxxxxx; không hợp lệ thì trả ''
+const vnPhone = (v) => {
+  let d = String(v ?? '').replace(/[\s.()-]/g, '').replace(/^\+/, '')
+  if (/^84\d{9}$/.test(d)) d = '0' + d.slice(2)
+  return /^0\d{9}$/.test(d) ? d : ''
+}
 const vnToday = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10)
 const newId = () => 'DH' + crypto.randomBytes(4).toString('hex').toUpperCase()
 const ORDER_CODE = /DH[0-9A-F]{8}/i
@@ -150,35 +157,46 @@ export async function createApp(env = process.env) {
 
   // ---------- Tài khoản: đăng nhập / đăng ký ----------
   const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 15, skipSuccessfulRequests: true, standardHeaders: true, legacyHeaders: false, message: { error: 'Thử lại sau 15 phút' } })
-  const registerLimit = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Đăng ký quá nhiều lần, thử lại sau' } })
-  const pub = (u) => ({ username: u._id, name: u.name, phone: u.phone || '', role: u.role })
+  const registerLimit = rateLimit({ windowMs: 60 * 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'Đăng ký quá nhiều lần, thử lại sau' } })
+  const captcha = createCaptcha({ secret })
+  const pub = (u) => ({ username: u._id, name: u.name, phone: u.phone || '', role: u.role, addresses: u.addresses || [], avatar: u.avatar || '' })
+  const PHONE = /^(\+?84|0)\d{8,10}$/
+  const cleanPhone = (v) => clip(v, 20).replace(/[\s.-]/g, '')
 
+  // Khách đăng nhập bằng SĐT (0xxxxxxxxx / +84… đều được); admin vẫn dùng tên đăng nhập
   api.post('/auth/login', loginLimit, async (req, res) => {
-    const username = clip(req.body?.username, 40).toLowerCase()
+    const raw = clip(req.body?.username, 40)
+    const username = vnPhone(raw) || raw.toLowerCase()
     const u = username && await db.getUser(username)
-    if (!u || !verifyPassword(req.body?.password, u.passHash)) return res.status(401).json({ error: 'Sai tên đăng nhập hoặc mật khẩu' })
+    if (!u || !verifyPassword(req.body?.password, u.passHash)) return res.status(401).json({ error: 'Sai số điện thoại hoặc mật khẩu' })
     auth.setCookie(req, res, { username: u._id, role: u.role })
     res.json({ ok: true, user: pub(u) })
   })
+
+  // Captcha chữ + số cho form đăng ký (chống đăng ký hàng loạt)
+  api.get('/auth/captcha', rateLimit({ windowMs: 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false }), (req, res) => {
+    res.set('Cache-Control', 'no-store').json(captcha.issue())
+  })
+
+  // Đăng ký: SĐT + mật khẩu + captcha; SĐT chính là tên đăng nhập
   api.post('/auth/register', registerLimit, async (req, res) => {
     const b = req.body || {}
-    const username = clip(b.username, 40).toLowerCase()
-    const name = clip(b.name, 80)
-    const phone = clip(b.phone, 20).replace(/[\s.-]/g, '')
+    const bad = captcha.check(b.captchaToken, b.captcha)
+    if (bad) return res.status(400).json({ error: bad, captcha: true })
+    const phone = vnPhone(b.phone)
     const pw = String(b.password ?? '')
-    if (!/^[a-z0-9_.]{3,30}$/.test(username)) return res.status(400).json({ error: 'Tên đăng nhập 3-30 ký tự: chữ thường không dấu, số, _ hoặc .' })
+    if (!phone) return res.status(400).json({ error: 'Số điện thoại không hợp lệ (10 số, bắt đầu bằng 0)' })
     if (pw.length < 6 || pw.length > 100) return res.status(400).json({ error: 'Mật khẩu tối thiểu 6 ký tự' })
-    if (!name) return res.status(400).json({ error: 'Vui lòng nhập họ tên' })
-    if (phone && !/^(\+?84|0)\d{8,10}$/.test(phone)) return res.status(400).json({ error: 'Số điện thoại không hợp lệ' })
-    const user = { username, name, phone, role: 'customer', passHash: hashPassword(pw) }
+    if (b.confirm !== undefined && String(b.confirm) !== pw) return res.status(400).json({ error: 'Mật khẩu nhập lại không khớp' })
+    const user = { username: phone, name: '', phone, role: 'customer', passHash: hashPassword(pw) }
     try {
       await db.createUser(user)
     } catch (e) {
-      if (e?.code === 11000) return res.status(409).json({ error: 'Tên đăng nhập đã tồn tại' })
+      if (e?.code === 11000) return res.status(409).json({ error: 'Số điện thoại này đã được đăng ký, vui lòng đăng nhập' })
       throw e
     }
     auth.setCookie(req, res, user)
-    res.status(201).json({ ok: true, user: pub({ _id: username, ...user }) })
+    res.status(201).json({ ok: true, user: pub({ _id: phone, ...user }) })
   })
   api.post('/auth/logout', (req, res) => { auth.clearCookie(res); res.json({ ok: true }) })
   api.get('/auth/me', async (req, res) => {
@@ -189,10 +207,72 @@ export async function createApp(env = process.env) {
 
   // Khách đã đăng nhập xem đơn của mình
   api.get('/me/orders', auth.requireUser, async (req, res) => {
-    res.json((await db.ordersByOwner(req.user.username)).map((o) => ({
-      id: o.id, trackCode: o.trackCode, createdAt: o.createdAt, status: o.status,
-      items: (o.items || []).map(({ name, size, color, qty, price }) => ({ name, size, color, qty, price })),
-    })))
+    res.json((await db.ordersByOwner(req.user.username)).map((o) => {
+      const t = orderTotals(o)
+      return {
+        id: o.id, trackCode: o.trackCode, createdAt: o.createdAt, status: normStatus(o.status), label: STATUS_LABEL[normStatus(o.status)] || o.status,
+        total: t.revenue, deposit: o.deposit || 0, cod: t.cod, depositDue: o.depositDue || 0,
+        items: (o.items || []).map(({ productId, name, size, color, qty, price }) => ({ productId, name, size, color, qty, price })),
+      }
+    }))
+  })
+
+  // Hồ sơ khách: họ tên, SĐT và sổ địa chỉ nhận hàng (tối đa 10)
+  const cleanAddress = (a) => {
+    const x = {
+      id: clip(a?.id, 20) || crypto.randomBytes(4).toString('hex'), label: clip(a?.label, 30),
+      name: clip(a?.name, 100), phone: cleanPhone(a?.phone), mode: a?.mode === 'old' ? 'old' : 'new',
+      province: clip(a?.province, 100), district: clip(a?.district, 100), ward: clip(a?.ward, 100), street: clip(a?.street, 200), isDefault: !!a?.isDefault,
+    }
+    if (x.mode === 'new') x.district = ''
+    if (!x.name || !PHONE.test(x.phone) || !x.province || !x.ward || !x.street || (x.mode === 'old' && !x.district)) return null
+    return x
+  }
+  api.put('/me/profile', auth.requireUser, async (req, res) => {
+    const b = req.body || {}
+    const name = clip(b.name, 80)
+    // Tài khoản đăng ký bằng SĐT: SĐT là tên đăng nhập nên không cho đổi
+    const phone = vnPhone(req.user.username) || cleanPhone(b.phone)
+    if (phone && !PHONE.test(phone)) return res.status(400).json({ error: 'Số điện thoại không hợp lệ' })
+    const raw = Array.isArray(b.addresses) ? b.addresses.slice(0, 10) : []
+    const addresses = raw.map(cleanAddress)
+    if (addresses.some((a) => !a)) return res.status(400).json({ error: 'Địa chỉ chưa đủ thông tin (người nhận, SĐT, tỉnh, phường/xã, số nhà)' })
+    // Luôn có đúng một địa chỉ mặc định
+    const def = Math.max(0, addresses.findIndex((a) => a.isDefault))
+    addresses.forEach((a, i) => { a.isDefault = i === def })
+    await db.updateUser(req.user.username, { name, phone, addresses })
+    res.json({ ok: true, user: pub({ ...(await db.getUser(req.user.username)) }) })
+  })
+  // Giỏ hàng theo tài khoản (đồng bộ giữa các thiết bị); giá luôn lấy theo mẫu lúc đặt nên chỉ lưu mẫu/size/màu/SL
+  api.get('/me/cart', auth.requireUser, async (req, res) => {
+    const u = await db.getUser(req.user.username)
+    res.set('Cache-Control', 'no-store').json({ items: u?.cart || [] })
+  })
+  // Ảnh đại diện: trình duyệt đã cắt vuông + thu nhỏ, gửi lên dạng data URL (tối đa ~200KB); '' = xóa ảnh
+  api.put('/me/avatar', auth.requireUser, async (req, res) => {
+    const avatar = String(req.body?.avatar ?? '')
+    if (avatar && (avatar.length > 280000 || !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/.test(avatar))) {
+      return res.status(400).json({ error: 'Ảnh đại diện không hợp lệ hoặc quá lớn' })
+    }
+    await db.updateUser(req.user.username, { avatar })
+    res.json({ ok: true, user: pub(await db.getUser(req.user.username)) })
+  })
+  api.put('/me/cart', auth.requireUser, async (req, res) => {
+    const raw = Array.isArray(req.body?.items) ? req.body.items.slice(0, 20) : null
+    if (!raw) return res.status(400).json({ error: 'Giỏ hàng không hợp lệ' })
+    const items = raw
+      .map((i) => ({ productId: clip(i?.productId, 40), size: clip(i?.size, 60), color: clip(i?.color, 60), qty: Math.min(99, Math.max(1, Math.floor(Number(i?.qty)) || 1)) }))
+      .filter((i) => i.productId)
+    await db.updateUser(req.user.username, { cart: items })
+    res.json({ ok: true, items })
+  })
+  api.post('/me/password', auth.requireUser, loginLimit, async (req, res) => {
+    const u = await db.getUser(req.user.username)
+    if (!u || !verifyPassword(req.body?.current, u.passHash)) return res.status(400).json({ error: 'Mật khẩu hiện tại không đúng' })
+    const pw = String(req.body?.next ?? '')
+    if (pw.length < 6 || pw.length > 100) return res.status(400).json({ error: 'Mật khẩu mới tối thiểu 6 ký tự' })
+    await db.setUserPassword(u._id, hashPassword(pw))
+    res.json({ ok: true })
   })
 
   // ---------- Khách: xem mẫu & đặt hàng ----------
@@ -200,7 +280,7 @@ export async function createApp(env = process.env) {
   api.get('/public/catalog', async (req, res) => {
     const products = ((await db.getKv('products')) || []).map((p) => Object.fromEntries(PUBLIC_FIELDS.map((k) => [k, p[k]])))
     const shop = { ...DEFAULT_SHOP, ...(await db.getKv('shop')) }
-    res.set('Cache-Control', 'public, max-age=30').json({ products, depositPct: depositEnabled(shop) ? Number(shop.depositPct) : 0 })
+    res.set('Cache-Control', 'no-cache').json({ products, depositPct: depositEnabled(shop) ? Number(shop.depositPct) : 0 })
   })
 
   // Chuyển tiếp ảnh mẫu ở domain ngoài (cùng origin) để trình duyệt đọc được pixel khi so khớp ảnh
@@ -249,6 +329,7 @@ export async function createApp(env = process.env) {
     }
     const order = withCosts({
       id: newId(), trackCode: newTrackCode(), owner: auth.session(req)?.username, createdAt: vnToday(), statusAt: new Date().toISOString(), status: 'Mới', deposit: 0, source: 'shop', customer, items,
+      ...(clip(b.note, 300) && { note: clip(b.note, 300) }),
     }, products, (await db.getKv('rates')) || [], normalizeCfg(await db.getKv('pricing')))
     // Shop đã cài tài khoản nhận cọc: đơn chờ khách chuyển khoản, SePay báo tiền về thì tự xác nhận
     const shop = { ...DEFAULT_SHOP, ...(await db.getKv('shop')) }

@@ -38,7 +38,7 @@ export default function AdminGate({ children }) {
           <ThemeToggle dark={dark} setDark={setDark} />
         </div>
         <Brand full />
-        <AuthForm onDone={done} />
+        <AuthForm onDone={done} allowRegister={false} loginLabel="Tên đăng nhập" />
         {err && <p className="err">{err}</p>}
         <p style={{ textAlign: 'center' }}><a href="/order" className="muted">← Về trang khách</a></p>
       </div>

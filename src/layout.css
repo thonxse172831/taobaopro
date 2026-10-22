@@ -1,0 +1,144 @@
+/* =====================================================================
+   Bố cục trang khách: tìm kiếm tích hợp ảnh, giỏ hàng riêng, ảnh đại diện, chat nổi
+   (nạp sau theme.css)
+   ===================================================================== */
+.brand-link{text-decoration:none;display:inline-flex}
+.logout{white-space:nowrap}
+
+/* ---------- Ảnh đại diện ---------- */
+.avatar{display:inline-grid;place-items:center;flex:none;border-radius:50%;object-fit:cover;background:var(--surface2);box-shadow:0 0 0 2px var(--surface),0 0 0 3px color-mix(in srgb,var(--brand) 35%,transparent)}
+.avatar-text{background:linear-gradient(135deg,var(--brand2),var(--brand-strong));color:#fff;font-weight:800;letter-spacing:.02em}
+.account-link{gap:8px;padding:4px 14px 4px 4px;border-radius:999px;min-height:40px}
+.account-link:not(:has(.avatar)){padding:8px 14px}
+.account-name{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+a.cart-btn{position:relative;display:inline-grid;place-items:center;padding:0;font-size:19px;text-decoration:none}
+.avatar-editor{display:flex;flex-direction:column;align-items:center;gap:4px}
+.avatar-btn{position:relative;padding:0;border:0;border-radius:50%;background:none;box-shadow:none;min-height:0}
+.avatar-btn:hover:not(:disabled){transform:scale(1.04);background:none}
+.avatar-cam{position:absolute;right:-2px;bottom:-2px;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--surface);box-shadow:var(--shadow);font-size:13px;transition:transform .2s var(--spring)}
+.avatar-btn:hover .avatar-cam{transform:scale(1.15) rotate(-8deg)}
+.account-hello{display:flex;align-items:center;gap:16px;margin:0 0 16px;animation:rise .45s var(--ease) both}
+.account-hello h2{margin:0;font-size:22px}
+.account-hello>div:nth-child(2){flex:1;min-width:0}
+.account-hello .logout{align-self:center;min-height:36px;font-size:13px}
+
+/* ---------- Ô tìm kiếm tích hợp tìm bằng ảnh ---------- */
+.hero-search{display:flex;align-items:center;gap:6px;max-width:560px;min-height:54px;margin:16px auto 6px;padding:5px 6px 5px 44px;border-radius:999px;background:var(--surface);border:1.5px solid var(--border);box-shadow:var(--shadow);transition:border-color .2s,box-shadow .2s,background .2s}
+.hero-search:focus-within{border-color:var(--brand);box-shadow:0 0 0 4px color-mix(in srgb,var(--brand) 16%,transparent),var(--shadow)}
+.hero-search.drag{border-style:dashed;border-color:var(--brand);background:var(--brand-soft)}
+.hero-search .search-icon{position:absolute;left:18px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:18px;pointer-events:none}
+.hero-search input[type=search]{flex:1;min-width:0;min-height:42px;padding:0 6px;border:0;border-radius:0;background:transparent;box-shadow:none}
+.hero-search input[type=search]:focus{box-shadow:none}
+.search-camera{flex:none;width:44px;height:44px;min-height:44px;padding:0;border-radius:50%;border:0;font-size:19px;background:var(--brand-soft);box-shadow:none}
+.search-camera:hover:not(:disabled){background:linear-gradient(135deg,var(--brand),var(--brand-strong));transform:scale(1.06)}
+.search-image-chip{flex:1;display:flex;align-items:center;gap:10px;min-width:0;font-size:14px;font-weight:600;color:var(--brand-ink);text-align:left}
+.search-image-chip img{width:38px;height:38px;border-radius:10px;object-fit:cover;flex:none;box-shadow:var(--shadow-sm)}
+.chip-x{margin-left:auto;width:30px;height:30px;min-height:30px;padding:0;border-radius:50%;box-shadow:none;font-size:12px}
+.search-drop-hint{position:absolute;left:0;right:0;bottom:-24px;font-size:12px;font-weight:600;color:var(--brand-ink)}
+
+/* ---------- Thẻ mẫu: 2 nút Thêm vào giỏ + Đặt hàng ---------- */
+.product-actions{display:grid;grid-template-columns:auto 1fr;gap:8px;margin-top:auto}
+.product-actions button{min-height:42px}
+.add-cart{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 12px;color:var(--brand-ink);border-color:color-mix(in srgb,var(--brand) 30%,var(--border));background:var(--brand-soft)}
+.add-cart:hover:not(:disabled){background:var(--brand-soft);border-color:var(--brand)}
+.match-chip{position:absolute;right:8px;top:8px;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;color:#fff;background:linear-gradient(135deg,var(--brand),var(--brand-strong));box-shadow:0 4px 12px -4px var(--brand-glow)}
+.product.best{border-color:var(--brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 20%,transparent),var(--shadow-lg)}
+.section-title button{min-height:34px;font-size:13px}
+
+/* Biểu tượng quét ảnh (màu xanh theo logo mẫu): vạch quét lên xuống, phần tô co giãn theo vạch */
+:root{--scan:#5aa5ff;--scan-fill:#9cc8ff;--scan-soft:#eaf3ff}
+[data-theme=dark]{--scan:#7ab8ff;--scan-fill:#3f6fa8;--scan-soft:#17263a}
+.scan-icon{display:block;color:var(--scan);overflow:visible}
+.scan-icon .scan-fill{fill:var(--scan-fill);transform-origin:0 361px;animation:scan-grow 2.4s ease-in-out infinite alternate}
+.scan-icon .scan-line{animation:scan-move 2.4s ease-in-out infinite alternate;filter:drop-shadow(0 0 10px color-mix(in srgb,var(--scan) 60%,transparent))}
+.scan-icon.busy .scan-fill,.scan-icon.busy .scan-line{animation-duration:.8s}
+@keyframes scan-move{from{transform:translateY(-117px)}to{transform:translateY(87px)}}
+@keyframes scan-grow{from{transform:scaleY(2.36)}to{transform:scaleY(.01)}}
+.search-camera,.scan-btn{display:inline-grid;place-items:center;background:var(--scan-soft);color:var(--scan)}
+.search-camera:hover:not(:disabled),.scan-btn:hover:not(:disabled){background:color-mix(in srgb,var(--scan) 22%,var(--surface));transform:scale(1.06)}
+.scan-btn:hover:not(:disabled){transform:scale(1.06)}
+.hero-search.drag .search-camera{background:color-mix(in srgb,var(--scan) 28%,var(--surface))}
+
+/* Thông báo có link xem giỏ */
+.toast a{color:var(--brand2);margin-left:6px;text-decoration:none}
+
+/* ---------- Trang giỏ hàng ---------- */
+.page-title{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:4px 2px 16px;animation:rise .4s var(--ease) both}
+.page-title h1{margin:0;font-size:clamp(24px,3.4vw,30px);font-weight:800}
+.cart-layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start}
+.cart-side{position:sticky;top:84px;display:flex;flex-direction:column;gap:16px}
+.cart-side .card{margin:0}
+.buyer{display:flex;flex-direction:column;gap:12px}
+.buyer h3{margin:0}
+.buyer-head{display:flex;align-items:center;gap:14px}
+.buyer-head>div:last-child{display:flex;flex-direction:column;gap:2px;min-width:0}
+.buyer-head b{font-size:17px}
+.buyer-info{margin:0;display:flex;flex-direction:column;gap:10px;padding:12px 14px;border-radius:var(--radius);background:var(--surface2)}
+.buyer-info>div{display:grid;grid-template-columns:96px 1fr;gap:8px;font-size:14px}
+.buyer-info dt{color:var(--muted);font-size:13px}
+.buyer-info dd{margin:0}
+.buyer-links{display:flex;flex-wrap:wrap;gap:8px}
+.buyer-links .btn-link{font-size:13px;min-height:36px}
+.perks{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px;font-size:14px}
+.perks li{padding:8px 12px;border-radius:12px;background:var(--surface2)}
+.primary-link{justify-content:center;min-height:44px;padding:0 18px;background:linear-gradient(135deg,var(--brand),var(--brand-strong));color:#fff;border-color:transparent;box-shadow:0 8px 20px -8px var(--brand-glow)}
+.primary-link:hover{background:linear-gradient(135deg,var(--brand),var(--brand-strong));color:#fff}
+.cart-empty{display:flex;flex-direction:column;align-items:center;gap:10px;padding:36px 18px}
+.cart-empty p{margin:0;font-weight:600;color:var(--text)}
+.cart-empty-icon{display:grid;place-items:center;width:72px;height:72px;border-radius:50%;background:var(--brand-soft);font-size:32px;animation:float 3.5s ease-in-out infinite}
+
+/* ---------- Tư vấn tự động: nút tròn góc phải + khung chat nổi ---------- */
+.chat-fab{position:fixed;right:22px;bottom:22px;z-index:45;width:60px;height:60px;min-height:60px;padding:0;border-radius:50%;border:0;font-size:26px;
+  background:linear-gradient(135deg,var(--brand),var(--brand-strong));color:#fff;box-shadow:0 14px 30px -10px var(--brand-glow),0 4px 10px rgba(0,0,0,.12);animation:pop .5s var(--spring) .4s both}
+.chat-fab:hover:not(:disabled){background:linear-gradient(135deg,var(--brand),var(--brand-strong));transform:translateY(-2px) scale(1.05)}
+.chat-fab span{display:inline-block;transition:transform .3s var(--spring)}
+.chat-fab.open span{transform:rotate(90deg)}
+.chat-fab::before{content:"";position:absolute;inset:0;border-radius:50%;animation:ring 2.4s ease-out 1.2s 3}
+.chat-fab-dot{position:absolute;top:4px;right:4px;width:14px;height:14px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 3px var(--surface)}
+.chat-float{position:fixed;right:22px;bottom:96px;z-index:44;width:min(390px,calc(100vw - 32px));
+  transform-origin:bottom right;opacity:0;transform:translateY(16px) scale(.92);visibility:hidden;pointer-events:none;
+  transition:opacity .25s var(--ease),transform .35s var(--spring),visibility 0s linear .35s}
+.chat-float.open{opacity:1;transform:none;visibility:visible;pointer-events:auto;transition:opacity .25s var(--ease),transform .35s var(--spring),visibility 0s}
+.chat-float .card{margin:0;box-shadow:var(--shadow-lg);animation:none;display:flex;flex-direction:column}
+.chat-float .chat .msgs{height:min(380px,52vh)}
+.chat-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.chat-head h3{margin:0}
+.chat-input{display:flex;align-items:center;gap:8px;margin-top:6px}
+.chat-input input:not([type=file]){flex:1;min-width:0}
+.chat-input .icon-btn{flex:none}
+.chat .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:8px 0 4px}
+.chat .chips button{flex:none;white-space:nowrap}
+.msg-image{max-width:min(200px,70%);border-radius:16px 16px 4px 16px;box-shadow:var(--shadow);animation:bubble .35s var(--spring) both}
+.msg.typing{display:flex;align-items:center;gap:8px;color:var(--muted)}
+
+/* ---------- Thanh điều hướng dưới (điện thoại) ---------- */
+.bottom-bar a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-height:52px;border-radius:14px;font-size:19px;color:var(--muted);text-decoration:none;font-weight:600;transition:background .2s,color .2s,transform .15s var(--ease)}
+.bottom-bar a span{font-size:11px}
+.bottom-bar a.on{color:var(--brand-ink);background:var(--brand-soft)}
+.bottom-bar a:active{transform:scale(.94)}
+
+@media(max-width:900px){
+  .cart-layout{grid-template-columns:minmax(0,1fr)}
+  .cart-side{position:static;order:-1}
+}
+@media(max-width:760px){
+  .shop .bottom-bar{grid-template-columns:repeat(3,1fr)}
+  .account-link{padding:3px}
+  .account-link .account-name{display:none}
+  .account-link:not(:has(.avatar)){padding:8px 12px;font-size:13px}
+  header .logout{min-height:36px;padding:6px 10px;font-size:13px}
+  .hero-search{padding-left:40px;min-height:50px}
+  .hero-search .search-icon{left:15px}
+  .search-camera{width:40px;height:40px;min-height:40px}
+  .product-actions{grid-template-columns:44px 1fr;gap:6px}
+  .add-cart{padding:0}
+  .add-cart span{display:none}
+  .match-chip{right:6px;top:auto;bottom:6px}
+  .chat-fab{right:14px;bottom:calc(80px + env(safe-area-inset-bottom));width:54px;height:54px;min-height:54px;font-size:23px}
+  .chat-float{right:8px;left:8px;bottom:calc(144px + env(safe-area-inset-bottom));width:auto}
+  .chat-float .chat .msgs{height:min(340px,42vh)}
+  .shop main{padding-bottom:110px}
+  .account-hello{gap:12px}
+  .account-hello h2{font-size:18px}
+  .seg3 button{font-size:13px;padding:8px 4px}
+}

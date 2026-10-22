@@ -25,6 +25,7 @@ Giá bán, giá vốn của đơn khách luôn do server tính lại từ dữ l
 - **Hotkeys**: Ctrl+S lưu, Ctrl+F tìm khách, Ctrl+N hoặc Alt+N đơn mới.
 - **Theo dõi đơn cho khách**: `/track/MÃ`.
 - **Tìm kiếm sản phẩm bằng ảnh**: khách chọn ảnh hoặc kéo thả trên trang shop; so khớp ngay trong trình duyệt với ảnh catalog (chịu được ảnh chụp màn hình, cắt viền, đổi độ sáng), không tải ảnh khách lên server. Ảnh mẫu ở domain ngoài được đọc qua `GET /api/public/img/:id`.
+- **Tài khoản khách & giỏ hàng**: khách đăng ký tại `/account` bằng SĐT + mật khẩu (có captcha chữ + số do server tạo, dùng một lần, hết hạn 5 phút) để lưu sổ địa chỉ (tối đa 10, có địa chỉ mặc định), xem "Đơn của tôi", "Mua lại", đổi mật khẩu. Trang shop có giỏ hàng (lưu trong trình duyệt) để đặt nhiều mẫu/size/màu trong một đơn; khách vãng lai vẫn đặt được, khách đã đăng nhập chỉ cần chọn địa chỉ đã lưu.
 - **Cọc trước bằng chuyển khoản**: khi tab "Cửa hàng" có số tài khoản và tỷ lệ cọc > 0, khách đặt xong sẽ thấy QR VietQR (nội dung CK = mã đơn). Đơn nằm ở cột "Chờ cọc"; SePay báo tiền về thì đơn tự chuyển sang "Chờ đặt hàng" và hiện thông báo ở admin. Quá 24 giờ chưa cọc thì tự hủy (tiền về muộn vẫn khôi phục đơn). Giao dịch ghi sai nội dung hiện ở bảng "Tiền cọc chuyển khoản" để gán tay. Cấu hình SePay: Webhook URL `https://tenmien.com/api/webhook/sepay`, chứng thực API Key = `SEPAY_API_KEY`.
 - **Câu chốt đơn, Bill K80 + QR VietQR**, **quét mã vạch bằng camera** (cần HTTPS) và PWA (cài lên điện thoại).
 

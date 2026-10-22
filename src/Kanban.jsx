@@ -38,6 +38,7 @@ export function OrderCard({ o, products, shop, sh, patchOrder, onBill, notify, o
   return (
     <div
       className={'kcard' + (stale ? ' stale' : '')}
+      style={{ '--c': STATUS_COLOR[status] }}
       draggable
       onDragStart={(e) => { e.dataTransfer.setData('text/plain', o.id); e.dataTransfer.effectAllowed = 'move' }}
     >
@@ -68,6 +69,12 @@ export function OrderCard({ o, products, shop, sh, patchOrder, onBill, notify, o
   )
 }
 
+// Màu nhận diện từng trạng thái (chấm ở tiêu đề cột, viền trái thẻ đơn)
+export const STATUS_COLOR = {
+  'Chờ cọc': '#f59e0b', 'Mới': '#f97316', 'Đã mua': '#8b5cf6', 'Kho TQ': '#6366f1', 'Đang về': '#3b82f6',
+  'Kho VN': '#0ea5e9', 'Đã xuất kho': '#14b8a6', 'Đang giao': '#10b981', 'Hoàn thành': '#059669', 'Đã hủy': '#94a3b8',
+}
+
 // Bảng Kanban kéo thả: thả thẻ vào cột để đổi trạng thái (lưu tự động)
 export default function Kanban({ orders, statuses = ORDER_STATUS, ...rest }) {
   const [over, setOver] = useState('')
@@ -80,6 +87,7 @@ export default function Kanban({ orders, statuses = ORDER_STATUS, ...rest }) {
           <section
             key={s}
             className={'kcol' + (over === s ? ' over' : '')}
+            style={{ '--c': STATUS_COLOR[s] }}
             onDragOver={(e) => { e.preventDefault(); setOver(s) }}
             onDragLeave={() => setOver('')}
             onDrop={(e) => {
@@ -90,7 +98,7 @@ export default function Kanban({ orders, statuses = ORDER_STATUS, ...rest }) {
               if (o && normStatus(o.status) !== s) patchOrder(id, { status: s })
             }}
           >
-            <h4>{STATUS_LABEL[s]} <span className="count">{list.length}</span></h4>
+            <h4><i className="kdot" aria-hidden="true" />{STATUS_LABEL[s]} <span className="count">{list.length}</span></h4>
             {list.map((o) => <OrderCard key={o.id} o={o} {...rest} />)}
             {!list.length && <p className="muted kempty">Kéo thẻ vào đây</p>}
           </section>

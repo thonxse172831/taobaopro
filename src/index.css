@@ -1,7 +1,25 @@
-:root{--bg:#fff7f0;--surface:#fff;--surface2:#f8f4f0;--text:#2b2420;--muted:#8a7f77;--border:#eee3da;--brand:#f97316;--brand2:#fb923c;--brand-soft:#fff1e6;--ok:#059669;--err:#dc2626;--shadow:0 6px 24px rgba(249,115,22,.08),0 1px 3px rgba(0,0,0,.05);color-scheme:light}
-[data-theme=dark]{--bg:#16110e;--surface:#211a16;--surface2:#2b221d;--text:#f5ede6;--muted:#a89a90;--border:#3a2f28;--brand-soft:#3a2415;--ok:#34d399;--err:#f87171;--shadow:0 6px 24px rgba(0,0,0,.35);color-scheme:dark}
+/* Bảng màu cam giữ nguyên; --brand-ink/--brand-strong dùng cho chữ nhỏ & giá để đủ tương phản */
+:root{
+  --bg:#fff8f2;--surface:#fff;--surface2:#fbf5ef;--surface3:#f5ebe1;--text:#2a211c;--muted:#7a6d64;--border:#f0e3d7;--border-strong:#e3cfbe;
+  --brand:#f97316;--brand2:#fb923c;--brand-strong:#ea580c;--brand-ink:#c2410c;--brand-soft:#fff1e5;--brand-glow:rgba(249,115,22,.3);
+  --ok:#059669;--ok-soft:#e6f6ee;--err:#dc2626;--err-soft:#fdecec;--warn:#b45309;--warn-soft:#fef3c7;
+  --radius-sm:10px;--radius:14px;--radius-lg:20px;--radius-xl:28px;
+  --shadow-sm:0 1px 2px rgba(70,35,10,.06);
+  --shadow:0 1px 2px rgba(70,35,10,.04),0 10px 28px -12px rgba(234,88,12,.18);
+  --shadow-lg:0 2px 6px rgba(70,35,10,.06),0 24px 56px -18px rgba(120,50,10,.3);
+  --ease:cubic-bezier(.2,.8,.2,1);--spring:cubic-bezier(.34,1.56,.64,1);
+  --font:'Be Vietnam Pro',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  color-scheme:light
+}
+[data-theme=dark]{
+  --bg:#14100d;--surface:#1d1713;--surface2:#261e19;--surface3:#30261f;--text:#f6eee7;--muted:#ab9d92;--border:#352a23;--border-strong:#4a3b31;
+  --brand-ink:#fdba74;--brand-strong:#fb923c;--brand-soft:#3a2214;--brand-glow:rgba(249,115,22,.22);
+  --ok:#34d399;--ok-soft:#0d2e22;--err:#f87171;--err-soft:#3a1717;--warn:#fbbf24;--warn-soft:#3a2a10;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.3);--shadow:0 1px 2px rgba(0,0,0,.25),0 12px 30px -14px rgba(0,0,0,.6);--shadow-lg:0 24px 56px -16px rgba(0,0,0,.7);
+  color-scheme:dark
+}
 *{box-sizing:border-box}
-body{margin:0;font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);transition:background .2s,color .2s}
+body{margin:0;font-family:var(--font);background:var(--bg);color:var(--text);transition:background .2s,color .2s}
 header{position:sticky;top:0;z-index:10;display:flex;gap:16px;align-items:center;background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(10px);padding:12px 24px;border-bottom:1px solid var(--border);flex-wrap:wrap}
 .logo{color:var(--brand);font-size:22px;letter-spacing:-.5px}
 .brand{display:inline-flex;align-items:center;gap:10px}
@@ -58,7 +76,7 @@ tr:last-child td{border-bottom:0}
 .chat-product-info small{font-size:11px}
 .chat-product button{flex:none;padding:7px 12px;font-size:13px}
 .legend{list-style:none;padding:0;margin:0}.legend li{margin:6px 0}.legend span{display:inline-block;width:12px;height:12px;border-radius:4px;margin-right:8px}
-svg text{fill:var(--muted)}
+svg text:not([fill^="#"]){fill:var(--muted)}
 ul{padding-left:18px}
 @media(max-width:760px){header{padding:10px 14px}nav{order:3;flex-basis:100%;flex-wrap:nowrap;overflow-x:auto}nav button{white-space:nowrap}main{padding:14px}.card{padding:16px}table{display:block;overflow-x:auto}.row{flex-wrap:wrap}}
 .seg{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--surface2);padding:5px;border-radius:16px;margin-bottom:12px}

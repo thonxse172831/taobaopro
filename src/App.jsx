@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Brand, NumInput, ThemeToggle, useTheme } from './ui'
+import { BackButton, Brand, NumInput, ThemeToggle, pushPath, useTheme } from './ui'
 import {
   vnd, today, uid, rateOn, costVnd, orderTotals, copyForCustomer, DEFAULT_PRICING, priceBreakdown, FEE_MODES,
-  normalizeCfg, withCosts, fullAddress, STOCK_STATUS, ORDER_STATUS, STATUS_LABEL, normStatus, newTrackCode, SEED_PRODUCTS, DEFAULT_SHOP,
+  normalizeCfg, withCosts, fullAddress, STOCK_STATUS, ORDER_STATUS, STATUS_LABEL, normStatus, newTrackCode, SEED_PRODUCTS, DEFAULT_SHOP, usePersisted,
 } from './lib'
 import { ChatBox, OrderForm } from './Customer'
 import Links from './Links'
@@ -21,9 +21,62 @@ const TABS = [
   ['work', 'Bàn làm việc'], ['stats', 'Thống kê'], ['catalog', 'Mẫu hàng'], ['links', 'Link đã lưu'], ['orders', 'Đơn hàng'],
   ['scan', 'Quét mã'], ['pricing', 'Giá & Thuế'], ['shop', 'Cửa hàng'], ['form', 'Đặt hàng & Tư vấn'],
 ]
+// Menu bên trái: nhóm theo công việc, kèm biểu tượng và mô tả ngắn hiện ở đầu trang
+const NAV = [
+  ['Vận hành', [['work', 'layout', 'Đơn cần xử lý & bảng Kanban'], ['orders', 'orders', 'Theo dõi, giao hàng, in hóa đơn'], ['scan', 'scan', 'Quét tem để xuất kho'], ['form', 'chat', 'Tạo đơn nhanh & thử bot tư vấn']]],
+  ['Sản phẩm', [['catalog', 'box', 'Thêm, sửa mẫu và giá bán'], ['links', 'link', 'Link Taobao/1688 đã lưu & giá']]],
+  ['Kinh doanh', [['stats', 'chart', 'Doanh thu, lợi nhuận, tồn kho'], ['pricing', 'percent', 'Tỷ giá, công thức giá, thuế']]],
+  ['Cài đặt', [['shop', 'store', 'Ngân hàng, câu chốt đơn, bookmarklet']]],
+]
+const TAB_LABEL = Object.fromEntries(TABS)
+const TAB_DESC = Object.fromEntries(NAV.flatMap(([, items]) => items.map(([id, , d]) => [id, d])))
+const ICON = {
+  layout: 'M4 4h6v8H4z M14 4h6v5h-6z M14 13h6v7h-6z M4 16h6v4H4z',
+  orders: 'M9 3h6v3H9z M8 4.5H6a1 1 0 0 0-1 1V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V5.5a1 1 0 0 0-1-1h-2 M9 11h6 M9 15h4',
+  scan: 'M3 8V5a2 2 0 0 1 2-2h3 M16 3h3a2 2 0 0 1 2 2v3 M21 16v3a2 2 0 0 1-2 2h-3 M8 21H5a2 2 0 0 1-2-2v-3 M7 12h10',
+  chat: 'M20 15a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z M9 10h6 M9 13h3',
+  box: 'M21 8 12 3 3 8v8l9 5 9-5z M3 8l9 5 9-5 M12 13v8',
+  link: 'M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1 M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1',
+  chart: 'M4 20V11 M10 20V5 M16 20v-6 M21 20H3',
+  percent: 'M19 5 5 19 M7.5 9.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M16.5 18.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
+  store: 'M4 9.5 5.5 4h13L20 9.5 M4 9.5V20h16V9.5 M4 9.5h16 M9.5 20v-5h5v5',
+  menu: 'M4 6h16 M4 12h16 M4 18h16',
+  plus: 'M12 5v14 M5 12h14',
+  paste: 'M9 3h6v3H9z M8 4.5H6a1 1 0 0 0-1 1V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V5.5a1 1 0 0 0-1-1h-2 M12 10v7 M9 14l3 3 3-3',
+  external: 'M14 4h6v6 M20 4l-9 9 M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
+  logout: 'M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3 M10 8l-4 4 4 4 M6 12h10',
+  collapse: 'M15 6l-6 6 6 6',
+  search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z M20 20l-4-4',
+}
+export const Icon = ({ name, size = 20 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={ICON[name]} /></svg>
+)
+
+// Tab nằm trên đường dẫn (/admin/orders…) để nút Quay lại / nút Back điện thoại về đúng tab trước
+const tabOf = () => {
+  const t = location.pathname.split('/')[2]
+  return TABS.some(([id]) => id === t) ? t : 'work'
+}
 
 export default function App({ logout }) {
-  const [tab, setTab] = useState('work')
+  const [tab, setTabState] = useState(tabOf)
+  const setTab = useCallback((id) => {
+    pushPath(id === 'work' ? '/admin' : `/admin/${id}`)
+    setTabState(id)
+  }, [])
+  useEffect(() => {
+    const on = () => setTabState(tabOf())
+    window.addEventListener('popstate', on)
+    return () => window.removeEventListener('popstate', on)
+  }, [])
+  const [collapsed, setCollapsed] = usePersisted('tb_admin_collapsed', false)
+  const [drawer, setDrawer] = useState(false) // menu trượt trên điện thoại
+  const go = (id) => {
+    setTab(id)
+    if (id === 'orders' || id === 'work') clearNew()
+    setDrawer(false)
+    window.scrollTo({ top: 0 })
+  }
   const [products, setProducts] = useServerKV('products', SEED_PRODUCTS)
   const { orders, setOrders, newCount, clearNew } = useOrders()
   const [rates, setRates] = useServerKV('rates', [{ date: '2026-01-01', rate: 3600 }])
@@ -108,7 +161,7 @@ export default function App({ logout }) {
       if (k === 'n') { e.preventDefault(); setModal('new') }
       else if (k === 'f' && !e.altKey) {
         e.preventDefault()
-        setTab((t) => (t === 'work' || t === 'orders' ? t : 'orders'))
+        if (!['work', 'orders'].includes(tabOf())) setTab('orders')
         setTimeout(() => { searchRef.current?.focus(); searchRef.current?.select() }, 0)
       } else if (k === 's' && !e.altKey) {
         e.preventDefault()
@@ -123,29 +176,58 @@ export default function App({ logout }) {
     window.addEventListener('keydown', onKey)
     window.addEventListener('paste', onPaste)
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('paste', onPaste) }
-  }, [detect])
+  }, [detect, setTab])
 
   const editing = modal?.edit && orders.find((o) => o.id === modal.edit)
   const sug = suggest && orders.find((o) => o.id === suggest.orderId)
 
   return (
-    <div className="app">
-      <header>
-        <Brand />
-        <nav>
-          {TABS.map(([id, t]) => (
-            <button key={id} className={id === tab ? 'active' : ''} onClick={() => { setTab(id); if (id === 'orders' || id === 'work') clearNew() }}>
-              {t}{id === 'orders' && newCount > 0 && <span className="new-dot">{newCount}</span>}
-            </button>
+    <div className={'app admin' + (collapsed ? ' collapsed' : '') + (drawer ? ' drawer-open' : '')}>
+      <aside className="side" aria-label="Menu quản trị">
+        <div className="side-brand">
+          <Brand label="TN Shop" />
+          <span className="side-role">Quản trị</span>
+        </div>
+        <nav className="side-nav">
+          {NAV.map(([group, items]) => (
+            <div className="side-group" key={group}>
+              <span className="side-group-title">{group}</span>
+              {items.map(([id, icon]) => (
+                <button key={id} type="button" className={'side-item' + (id === tab ? ' active' : '')} onClick={() => go(id)} title={collapsed ? TAB_LABEL[id] : undefined} aria-current={id === tab ? 'page' : undefined}>
+                  <Icon name={icon} />
+                  <span className="side-label">{TAB_LABEL[id]}</span>
+                  {id === 'orders' && newCount > 0 && <span className="new-dot" key={newCount}>{newCount}</span>}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
-        <input ref={searchRef} className="search" type="search" placeholder="Tìm khách… (Ctrl+F)" value={q} onChange={(e) => setQ(e.target.value)} />
-        <button className="primary" onClick={() => setModal('new')} title="Ctrl+N hoặc Alt+N">＋ Đơn mới</button>
-        <button className="icon-btn" onClick={readClipboard} title="Dán mã vận đơn TQ từ clipboard">📋</button>
-        <span className="muted">1¥ = {vnd(rate)}</span>
-        <a className="shop-link" href="/order" target="_blank" rel="noreferrer">🛍 Trang khách</a>
+        <div className="side-foot">
+          <span className="rate-chip" title="Tỷ giá áp dụng hôm nay">¥1 = {vnd(rate)}</span>
+          <a className="side-item" href="/order" target="_blank" rel="noreferrer"><Icon name="external" /><span className="side-label">Trang khách</span></a>
+          <button type="button" className="side-item" onClick={logout}><Icon name="logout" /><span className="side-label">Đăng xuất</span></button>
+          <button type="button" className="side-item side-collapse" onClick={() => setCollapsed(!collapsed)} aria-label={collapsed ? 'Mở rộng menu' : 'Thu gọn menu'}>
+            <Icon name="collapse" /><span className="side-label">Thu gọn menu</span>
+          </button>
+        </div>
+      </aside>
+      {drawer && <div className="side-backdrop" onClick={() => setDrawer(false)} />}
+
+      <div className="admin-body">
+      <header className="admin-top">
+        <button type="button" className="icon-btn menu-btn" onClick={() => setDrawer(true)} aria-label="Mở menu"><Icon name="menu" /></button>
+        <BackButton fallback={tab !== 'work' ? () => setTab('work') : null} />
+        <div className="page-head">
+          <h1>{TAB_LABEL[tab]}</h1>
+          <small className="muted">{TAB_DESC[tab]}</small>
+        </div>
+        <label className="admin-search">
+          <Icon name="search" size={18} />
+          <input ref={searchRef} type="search" placeholder="Tìm khách, SĐT, mã đơn… (Ctrl+F)" aria-label="Tìm đơn hàng" value={q} onChange={(e) => setQ(e.target.value)} />
+        </label>
+        <button type="button" className="icon-btn" onClick={readClipboard} title="Dán mã vận đơn TQ từ clipboard" aria-label="Dán mã vận đơn TQ"><Icon name="paste" /></button>
         <ThemeToggle dark={dark} setDark={setDark} />
-        <button className="logout" onClick={logout}>Đăng xuất</button>
+        <button className="primary new-order" onClick={() => setModal('new')} title="Ctrl+N hoặc Alt+N"><Icon name="plus" size={18} /><span>Đơn mới</span></button>
       </header>
       {suggest && sug && (
         <div className="suggest">
@@ -171,6 +253,18 @@ export default function App({ logout }) {
           </div>
         )}
       </main>
+      </div>
+
+      <nav className="admin-tabbar" aria-label="Điều hướng nhanh">
+        {[['work', 'layout', 'Bàn làm việc'], ['orders', 'orders', 'Đơn hàng']].map(([id, icon, label]) => (
+          <button key={id} type="button" className={id === tab ? 'on' : ''} onClick={() => go(id)}>
+            <Icon name={icon} /><span>{label}</span>{id === 'orders' && newCount > 0 && <i className="new-dot">{newCount}</i>}
+          </button>
+        ))}
+        <button type="button" className="tabbar-new" onClick={() => setModal('new')} aria-label="Tạo đơn mới"><Icon name="plus" size={26} /></button>
+        <button type="button" className={tab === 'scan' ? 'on' : ''} onClick={() => go('scan')}><Icon name="scan" /><span>Quét mã</span></button>
+        <button type="button" onClick={() => setDrawer(true)}><Icon name="menu" /><span>Menu</span></button>
+      </nav>
 
       {modal === 'new' && (
         <div className="modal" onClick={(e) => e.target === e.currentTarget && setModal(null)}>

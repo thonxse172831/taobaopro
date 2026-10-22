@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import DepositPay from './Deposit'
-import { vnd, uid, today, depositOf, STOCK_STATUS, ETA } from './lib'
+import { useEffect, useRef, useState } from 'react'
+import { vnd, uid, today, STOCK_STATUS, ETA } from './lib'
 import { AddressPicker, EMPTY_ADDR, addrError, useVnData } from './address'
 import { smartParse } from './smartpaste'
+import { ScanIcon } from './ui'
 
 const MAX_CARDS = 6
 
@@ -54,13 +54,18 @@ function ChatProduct({ p, onBuy }) {
   )
 }
 
+const MAX_IMAGE = 12 * 1024 * 1024
+const GREETING = { from: 'bot', text: 'Xin chào! Bạn cần tư vấn mẫu nào ạ? Bạn cũng có thể gửi ảnh để mình quét tìm mẫu giống.' }
+
 // onBuy(productId): khi khách bấm "Đặt hàng" trên thẻ mẫu trong khung chat
-export function ChatBox({ products, onBuy }) {
-  const [msgs, setMsgs] = useState([{ from: 'bot', text: 'Xin chào! Bạn cần tư vấn mẫu nào ạ?' }])
+export function ChatBox({ products, onBuy, onClose, title = '💬 Tư vấn tự động' }) {
+  const [msgs, setMsgs] = useState([GREETING])
   const [input, setInput] = useState('')
+  const [busy, setBusy] = useState(false)
   const box = useRef(null)
+  const file = useRef(null)
   useEffect(() => {
-    box.current?.scrollTo({ top: box.current.scrollHeight })
+    box.current?.scrollTo({ top: box.current.scrollHeight, behavior: 'smooth' })
   }, [msgs])
 
   const ask = (text) => {
@@ -69,36 +74,96 @@ export function ChatBox({ products, onBuy }) {
     setMsgs((m) => [...m, { from: 'me', text }, { from: 'bot', text: r.text, ids: r.products.map((p) => p.id) }])
     setInput('')
   }
+
+  // Khách gửi ảnh: so khớp ngay trên máy với ảnh mẫu của shop (không tải ảnh lên server)
+  const sendImage = async (f) => {
+    if (!f || busy) return
+    if (!f.type.startsWith('image/') || f.size > MAX_IMAGE) {
+      setMsgs((m) => [...m, { from: 'bot', text: 'Bạn gửi giúp mình ảnh JPG/PNG/WebP dưới 12 MB nhé.' }])
+      return
+    }
+    const url = URL.createObjectURL(f)
+    setMsgs((m) => [...m, { from: 'me', image: url }, { from: 'bot', text: 'Đang tìm mẫu giống ảnh của bạn…', pending: true }])
+    setBusy(true)
+    let r
+    try {
+      const { searchProductsByImage } = await import('./imagehash.js')
+      const found = await searchProductsByImage(url, products)
+      r = found.matches.length
+        ? { text: found.best ? `Mình tìm thấy mẫu rất giống ảnh của bạn (khớp ${found.matches[0].similarity}%) 👇` : 'Đây là các mẫu gần giống nhất ạ:', ids: found.matches.map((x) => x.product.id) }
+        : { text: 'Chưa thấy mẫu đủ giống trong shop. Bạn thử ảnh rõ sản phẩm hơn, hoặc gõ tên mẫu để mình tìm nhé!' }
+    } catch {
+      r = { text: 'Mình không đọc được ảnh này, bạn thử ảnh khác nhé.' }
+    }
+    setBusy(false)
+    setMsgs((m) => [...m.filter((x) => !x.pending), { from: 'bot', ...r }])
+  }
+
   return (
     <div className="card chat">
-      <h3>💬 Tư vấn tự động</h3>
-      <div className="msgs" ref={box}>
+      <div className="chat-head">
+        <h3>{title}</h3>
+        {onClose && <button type="button" className="icon-btn" onClick={onClose} aria-label="Thu nhỏ khung tư vấn">✕</button>}
+      </div>
+      <div className="msgs" ref={box} aria-live="polite">
         {msgs.map((m, i) => {
           // Lấy mẫu theo id từ danh sách hiện tại để giá/ảnh luôn mới, mẫu đã xóa thì ẩn
           const cards = (m.ids || []).map((id) => products.find((p) => p.id === id)).filter(Boolean)
           return (
             <div key={i} className={'msg-group ' + m.from}>
-              <div className={'msg ' + m.from}>{m.text}</div>
+              {m.image
+                ? <img className="msg-image" src={m.image} alt="Ảnh bạn gửi" />
+                : <div className={'msg ' + m.from + (m.pending ? ' typing' : '')}>{m.pending && <span className="spinner" aria-hidden="true" />}{m.text}</div>}
               {cards.length > 0 && <div className="chat-products">{cards.map((p) => <ChatProduct key={p.id} p={p} onBuy={onBuy} />)}</div>}
             </div>
           )
         })}
       </div>
       <div className="chips">{QUICK.map((q) => <button key={q} type="button" onClick={() => ask(q)}>{q}</button>)}</div>
-      <form onSubmit={(e) => { e.preventDefault(); ask(input) }} className="row">
-        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Hỏi giá, size, thời gian giao…" />
-        <button className="primary">Gửi</button>
+      <form onSubmit={(e) => { e.preventDefault(); ask(input) }} className="chat-input">
+        <input ref={file} type="file" accept="image/*" hidden onChange={(e) => { sendImage(e.target.files[0]); e.target.value = '' }} />
+        <button type="button" className="icon-btn scan-btn" onClick={() => file.current?.click()} disabled={busy || !products.length} title="Gửi ảnh để tìm mẫu giống" aria-label="Gửi ảnh để tìm mẫu giống"><ScanIcon size={22} busy={busy} /></button>
+        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Hỏi giá, size, thời gian giao…" aria-label="Nội dung tin nhắn" />
+        <button className="primary" disabled={!input.trim()}>Gửi</button>
       </form>
     </div>
   )
 }
 
-// depositPct > 0: shop yêu cầu khách chuyển khoản cọc ngay sau khi gửi đơn
-export function OrderForm({ products, onSubmit, pick, showDeposit = true, smart = false, prefill = null, depositPct = 0 }) {
+// Tư vấn thu nhỏ thành nút tròn góc phải; bấm để mở khung chat
+export function ChatWidget({ products, onBuy }) {
+  const [open, setOpen] = useState(false)
+  const [seen, setSeen] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    const on = (e) => e.key === 'Escape' && setOpen(false)
+    window.addEventListener('keydown', on)
+    return () => window.removeEventListener('keydown', on)
+  }, [open])
+  return (
+    <>
+      <div className={'chat-float' + (open ? ' open' : '')} role="dialog" aria-label="Tư vấn tự động" aria-hidden={!open}>
+        <ChatBox products={products} onClose={() => setOpen(false)} onBuy={(id) => { setOpen(false); onBuy(id) }} />
+      </div>
+      <button
+        type="button"
+        className={'chat-fab' + (open ? ' open' : '')}
+        onClick={() => { setOpen(!open); setSeen(true) }}
+        aria-label={open ? 'Thu nhỏ khung tư vấn' : 'Mở tư vấn tự động'}
+        aria-expanded={open}
+      >
+        <span aria-hidden="true">{open ? '✕' : '💬'}</span>
+        {!seen && !open && <i className="chat-fab-dot" aria-hidden="true" />}
+      </button>
+    </>
+  )
+}
+
+// Form tạo đơn nhanh của admin (khách đặt qua giỏ hàng ở Checkout.jsx)
+export function OrderForm({ products, onSubmit, pick, showDeposit = true, smart = false }) {
   const blank = { name: '', phone: '', productId: products[0]?.id || '', size: '', color: '', qty: 1, deposit: 0 }
   const [f, setF] = useState(blank)
   const [addr, setAddr] = useState(EMPTY_ADDR)
-  const [done, setDone] = useState(null)
   const [err, setErr] = useState('')
   const [paste, setPaste] = useState('')
   const [pasteMsg, setPasteMsg] = useState('')
@@ -115,11 +180,6 @@ export function OrderForm({ products, onSubmit, pick, showDeposit = true, smart 
     setPasteMsg(miss.length ? `Đã điền, chưa nhận ra: ${miss.join(', ')} — vui lòng bổ sung` : '✅ Đã điền đủ thông tin, kiểm tra lại rồi đặt đơn')
   }
 
-  // Khách đã đăng nhập: tự điền tên và SĐT đã đăng ký
-  useEffect(() => {
-    if (prefill) setF((x) => ({ ...x, name: x.name || prefill.name || '', phone: x.phone || prefill.phone || '' }))
-  }, [prefill])
-
   // Khi khách bấm "Đặt mua" ở một mẫu
   useEffect(() => {
     if (pick) setF((x) => ({ ...x, productId: pick.id, size: '', color: '' }))
@@ -129,7 +189,6 @@ export function OrderForm({ products, onSubmit, pick, showDeposit = true, smart 
   const p = products.find((x) => x.id === f.productId) ?? products[0]
 
   const [busy, setBusy] = useState(false)
-  const onPaid = useCallback((r) => setDone((d) => d && { ...d, payment: null, deposit: r.deposit }), [])
 
   const submit = async (e) => {
     e.preventDefault()
@@ -149,92 +208,17 @@ export function OrderForm({ products, onSubmit, pick, showDeposit = true, smart 
       items: [{ productId: p.id, name: p.name, size: f.size || p.sizes[0], color: f.color || p.colors[0], qty: Math.max(1, Number(f.qty) || 1), price: p.priceVnd, cost: 0 }],
     }
     setBusy(true)
-    let res
     try {
-      res = await onSubmit(order)
+      await onSubmit(order)
     } catch (x) {
       setBusy(false)
       return setErr(x.message || 'Không gửi được đơn, vui lòng thử lại')
     }
     setBusy(false)
-    setDone({
-      id: (typeof res === 'string' ? res : res?.id) || order.id,
-      trackCode: res?.trackCode,
-      productName: p.name,
-      image: p.image,
-      qty: Math.max(1, Number(f.qty) || 1),
-      total: (p.priceVnd || 0) * Math.max(1, Number(f.qty) || 1),
-      customerName: f.name.trim(),
-      payment: res?.payment || null,
-    })
     setF({ ...blank, productId: f.productId })
     setAddr(EMPTY_ADDR)
     setPaste('')
     setPasteMsg('')
-  }
-
-  if (done?.payment && !smart) {
-    return (
-      <section className="card order-pay" id="order-form" aria-labelledby="order-pay-title">
-        <span className="success-eyebrow">BƯỚC CUỐI · CHUYỂN KHOẢN CỌC</span>
-        <h2 id="order-pay-title">Chuyển cọc {vnd(done.payment.amount)} để hoàn tất đơn {done.id}</h2>
-        <p className="success-copy">Đơn sẽ được xác nhận tự động ngay khi shop nhận được tiền cọc. Phần còn lại ({vnd(Math.max(0, done.total - done.payment.amount))}) thanh toán khi nhận hàng.</p>
-        <DepositPay payment={done.payment} trackCode={done.trackCode} onPaid={onPaid} />
-        {done.trackCode && <a className="success-again" href={`/track/${done.trackCode}`}>Để sau — xem đơn & chuyển khoản tại trang theo dõi</a>}
-      </section>
-    )
-  }
-
-  if (done && !smart) {
-    return (
-      <section className="card order-success" id="order-form" aria-labelledby="order-success-title" role="status">
-        <div className="success-mark" aria-hidden="true">
-          <svg viewBox="0 0 48 48" fill="none">
-            <circle cx="24" cy="24" r="22" />
-            <path d="m14 24 7 7 14-15" />
-          </svg>
-        </div>
-        <span className="success-eyebrow">ĐẶT HÀNG THÀNH CÔNG</span>
-        <h2 id="order-success-title">Cảm ơn {done.customerName}!</h2>
-        <p className="success-copy">
-          {done.deposit > 0
-            ? <>Shop đã nhận tiền cọc <b>{vnd(done.deposit)}</b>, đơn hàng đã được xác nhận và đang chờ shop xử lý.</>
-            : 'Shop đã nhận được đơn hàng của bạn và sẽ sớm liên hệ để xác nhận.'}
-        </p>
-
-        <div className="success-order-id">
-          <span>Mã đơn hàng</span>
-          <strong>{done.id}</strong>
-        </div>
-
-        <div className="success-item">
-          {done.image
-            ? <img src={done.image} alt="" />
-            : <div className="success-item-placeholder" aria-hidden="true">🛍️</div>}
-          <div className="success-item-info">
-            <strong>{done.productName}</strong>
-            <span>Số lượng: {done.qty}</span>
-          </div>
-          <strong className="success-total">{vnd(done.total)}</strong>
-        </div>
-
-        <div className="success-next">
-          <span className="success-next-icon" aria-hidden="true">💬</span>
-          <p><strong>Tiếp theo</strong><br />Nhân viên sẽ gọi xác nhận đơn qua số điện thoại bạn đã cung cấp.</p>
-        </div>
-
-        <div className="success-actions">
-          {done.trackCode && (
-            <a className="success-track" href={`/track/${done.trackCode}`}>
-              Theo dõi đơn hàng <span aria-hidden="true">→</span>
-            </a>
-          )}
-          <button type="button" className="success-again" onClick={() => setDone(null)}>
-            Tiếp tục mua sắm
-          </button>
-        </div>
-      </section>
-    )
   }
 
   return (
@@ -277,11 +261,8 @@ export function OrderForm({ products, onSubmit, pick, showDeposit = true, smart 
         {showDeposit && <label>Tiền cọc (đ)<input type="number" min="0" value={f.deposit} onChange={set('deposit')} /></label>}
       </div>
       <p>Tạm tính: <b>{vnd((p?.priceVnd || 0) * (Number(f.qty) || 0))}</b>{p && <span className="muted"> · {STOCK_STATUS[p.status]}, nhận hàng {ETA[p.status]}</span>}</p>
-      {depositPct > 0 && !smart && (
-        <p className="deposit-note">💳 Cọc trước {depositPct}% (≈ <b>{vnd(depositOf((p?.priceVnd || 0) * (Number(f.qty) || 0), depositPct))}</b>) bằng chuyển khoản/QR, phần còn lại trả khi nhận hàng.</p>
-      )}
       {err && <p className="err">{err}</p>}
-      <button className="primary" disabled={busy}>{busy ? 'Đang gửi…' : depositPct > 0 && !smart ? 'Đặt hàng & chuyển cọc' : 'Đặt hàng'}</button>
+      <button className="primary" disabled={busy}>{busy ? 'Đang gửi…' : 'Đặt hàng'}</button>
     </form>
   )
 }

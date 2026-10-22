@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
 import DepositPay from './Deposit'
-import { Brand, ThemeToggle, useTheme } from './ui'
+import { BackButton, Brand, ThemeToggle, useTheme } from './ui'
 import { vnd } from './lib'
 
 const CARRIER_URL = {
@@ -26,6 +26,7 @@ export default function Track({ code }) {
   return (
     <div className="app shop track">
       <header>
+        <BackButton fallback="/order" />
         <Brand label={o?.shop.name || 'TN Shop'} />
         <span style={{ flex: 1 }} />
         <ThemeToggle dark={dark} setDark={setDark} />

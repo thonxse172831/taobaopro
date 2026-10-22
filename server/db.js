@@ -25,6 +25,7 @@ export async function openDb(rawUri, dbName = 'taobaopro') {
     getUser: async (username) => users.findOne({ _id: username }),
     createUser: async (u) => { await users.insertOne({ _id: u.username, ...u, createdAt: now() }) },
     setUserPassword: async (username, passHash) => { await users.updateOne({ _id: username }, { $set: { passHash } }) },
+    updateUser: async (username, patch) => { await users.updateOne({ _id: username }, { $set: { ...patch, updatedAt: now() } }) },
     ordersByOwner: async (owner) => (await orders.find({ owner }).sort({ createdAt: -1, insertedAt: -1 }).toArray()).map((r) => r.data),
     getKv: async (key) => (await kv.findOne({ _id: key }))?.value,
     allKv: async () => Object.fromEntries((await kv.find().toArray()).map((r) => [r._id, r.value])),

@@ -36,17 +36,20 @@ export function dashboardStats(products, orders, rate, cfg) {
   }
 }
 
-export const Metric = ({ title, value, warn }) => (
-  <div className={'card metric' + (warn ? ' warn' : '')}><span className="muted">{title}</span><b>{value}</b></div>
+export const Metric = ({ title, value, warn, icon, tone }) => (
+  <div className={'card metric' + (warn ? ' warn' : '')} style={tone ? { '--tone': tone } : undefined}>
+    {icon && <span className="metric-icon" aria-hidden="true">{icon}</span>}
+    <span className="muted">{title}</span><b>{value}</b>
+  </div>
 )
 
 export function Metrics({ s }) {
   return (
     <div className="cards">
-      <Metric title="Tồn quá 30 ngày" value={`${s.old.length} mẫu / ${s.old.reduce((n, p) => n + p.stock, 0)} sp`} warn={s.old.length > 0} />
-      <Metric title="Giá trị hàng kẹt kho TQ" value={vnd(s.stuck)} />
-      <Metric title="Thuế cần nộp trong quý" value={vnd(s.taxQuarter)} />
-      <Metric title="Công nợ COD chờ thu" value={vnd(s.cod)} />
+      <Metric icon="📦" tone="#f59e0b" title="Tồn quá 30 ngày" value={`${s.old.length} mẫu / ${s.old.reduce((n, p) => n + p.stock, 0)} sp`} warn={s.old.length > 0} />
+      <Metric icon="🚢" tone="#6366f1" title="Giá trị hàng kẹt kho TQ" value={vnd(s.stuck)} />
+      <Metric icon="🧾" tone="#0ea5e9" title="Thuế cần nộp trong quý" value={vnd(s.taxQuarter)} />
+      <Metric icon="💰" tone="#10b981" title="Công nợ COD chờ thu" value={vnd(s.cod)} />
     </div>
   )
 }
