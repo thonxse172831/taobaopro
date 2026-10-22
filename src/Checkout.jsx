@@ -186,8 +186,6 @@ export function Checkout({ products, cart, depositPct, user, setUser, loaded = t
 
       {lines.length > 0 && (
         <>
-          <h4>Giao tới</h4>
-          {!user && <p className="muted login-hint"><a href="/account">Đăng nhập / Đăng ký</a> để lưu địa chỉ và theo dõi mọi đơn hàng của bạn.</p>}
           {saved.length > 0 && (
             <div className="addr-pick">
               {saved.map((a) => (
