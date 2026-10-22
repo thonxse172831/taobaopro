@@ -65,7 +65,7 @@ export function LoginPage() {
     <div className="login">
       <div style={{ width: '100%', maxWidth: 380 }}>
         <div className="row" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
-          <b className="logo">TaobaoPro</b>
+          <b className="logo">TN Shop</b>
           <ThemeToggle dark={dark} setDark={setDark} />
         </div>
         <AuthForm onDone={done} />

@@ -50,7 +50,7 @@ export const BANKS = [
 export const DEFAULT_TEMPLATE =
   'Dạ mẫu {ten} giá gốc {gia_te} tệ, tổng tiền về tay là {gia_vnd} ạ. Chị chuyển khoản cọc giúp em {tien_coc} nhé 💕 Còn lại {con_lai} thanh toán khi nhận hàng.{link_track}'
 export const DEFAULT_SHOP = {
-  name: 'TaobaoPro', phone: '', bankBin: '970436', bankAccount: '', bankHolder: '', depositPct: 50, template: DEFAULT_TEMPLATE,
+  name: 'TN Shop', phone: '', bankBin: '970436', bankAccount: '', bankHolder: '', depositPct: 50, template: DEFAULT_TEMPLATE,
 }
 export const TEMPLATE_VARS = ['ten', 'gia_te', 'gia_vnd', 'tien_coc', 'con_lai', 'size', 'mau', 'sl', 'ma_don', 'ten_khach', 'stk', 'link_track']
 

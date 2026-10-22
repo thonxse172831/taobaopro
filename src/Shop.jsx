@@ -42,7 +42,7 @@ export default function Shop() {
   return (
     <div className="app shop">
       <header>
-        <b className="logo">TaobaoPro</b>
+        <b className="logo">TN Shop</b>
         <span className="muted tagline" style={{ flex: 1 }}>Order hàng Taobao/1688 chính ngạch · giá rõ ràng</span>
         <ThemeToggle dark={dark} setDark={setDark} />
         {user === null && <button className="primary" onClick={() => { location.href = '/login' }}>Đăng nhập / Đăng ký</button>}

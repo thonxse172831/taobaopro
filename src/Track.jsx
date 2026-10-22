@@ -23,7 +23,7 @@ export default function Track({ code }) {
   return (
     <div className="app shop track">
       <header>
-        <b className="logo">{o?.shop.name || 'TaobaoPro'}</b>
+        <b className="logo">{o?.shop.name || 'TN Shop'}</b>
         <span style={{ flex: 1 }} />
         <ThemeToggle dark={dark} setDark={setDark} />
       </header>

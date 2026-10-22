@@ -22,7 +22,7 @@ function ClipInner() {
   return (
     <div className="login">
       <div className="card login-card">
-        <b className="logo">TaobaoPro</b>
+        <b className="logo">TN Shop</b>
         {st.phase === 'saving' && <p>Đang lưu vào kho…</p>}
         {st.phase === 'err' && <p className="err">{st.msg}</p>}
         {st.phase === 'ok' && (

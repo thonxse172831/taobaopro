@@ -34,7 +34,7 @@ export default function AdminGate({ children }) {
     <div className="login">
       <div style={{ width: '100%', maxWidth: 380 }}>
         <div className="row" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
-          <b className="logo">TaobaoPro · Quản trị</b>
+          <b className="logo">TN Shop · Quản trị</b>
           <ThemeToggle dark={dark} setDark={setDark} />
         </div>
         <AuthForm onDone={done} />

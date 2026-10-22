@@ -1,6 +1,6 @@
 {
-  "name": "TaobaoPro Admin",
-  "short_name": "TaobaoPro",
+  "name": "TN Shop Admin",
+  "short_name": "TN Shop",
   "description": "Quản lý order Taobao/1688: đơn hàng, kho, quét mã vận đơn",
   "start_url": "/admin",
   "scope": "/",

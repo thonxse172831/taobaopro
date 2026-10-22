@@ -212,7 +212,7 @@ export async function createApp(env = process.env) {
       customer: maskName(o.customer?.name), carrier: o.carrier || '', tracking: o.tracking || '',
       items: o.items.map(({ name, size, color, qty, price }) => ({ name, size, color, qty, price })),
       total: t.revenue, deposit: o.deposit || 0, cod: t.cod,
-      shop: { name: shop.name || 'TaobaoPro', phone: shop.phone || '' },
+      shop: { name: shop.name || 'TN Shop', phone: shop.phone || '' },
     })
   })
 

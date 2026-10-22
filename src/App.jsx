@@ -119,7 +119,7 @@ export default function App({ logout }) {
   return (
     <div className="app">
       <header>
-        <b className="logo">TaobaoPro</b>
+        <b className="logo">TN Shop</b>
         <nav>
           {TABS.map(([id, t]) => (
             <button key={id} className={id === tab ? 'active' : ''} onClick={() => { setTab(id); if (id === 'orders' || id === 'work') clearNew() }}>
