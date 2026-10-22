@@ -113,3 +113,8 @@ hr{border:0;border-top:1px solid var(--border);margin:10px 0}
   main{padding:14px}
   .suggest{padding:10px 14px}
 }
+
+.addr-sug{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.addr-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;font-size:13px;text-align:left}
+.addr-chip .tag{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--accent,#f97316);color:#fff}
+.addr-chip .tag.old{background:#64748b}

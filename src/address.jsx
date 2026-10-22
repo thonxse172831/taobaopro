@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { suggestAddress, suggestLabel } from './addrsuggest'
 
 export const norm = (s) =>
   String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'd').toLowerCase().replace(/\s+/g, ' ').trim()
@@ -92,6 +93,15 @@ export function AddressPicker({ value, onChange }) {
     onChange({ ...EMPTY_ADDR, mode: m, street: value.street })
   }
 
+  const oldD = useVnData('old').rows
+  const newD = useVnData('new').rows
+  const suggestions = useMemo(() => {
+    if (!oldD || !newD || value.street.trim().length < 3) return []
+    return suggestAddress(value.street, oldD, newD).filter((c) => !(
+      c.mode === mode && c.province === value.province && (c.district || '') === value.district && (c.ward || '') === value.ward
+    ))
+  }, [oldD, newD, value, mode])
+
   const preview = [value.street, value.ward, value.district, value.province].filter(Boolean).join(', ')
 
   return (
@@ -107,8 +117,18 @@ export function AddressPicker({ value, onChange }) {
           <Combo label="Quận/Huyện" required options={districts} value={value.district} disabled={!value.province} placeholder="Chọn tỉnh trước" onChange={(v) => set({ district: v, ward: '' })} />
         )}
         <Combo label="Phường/Xã" required options={wards} value={value.ward} disabled={!value.province || (mode === 'old' && !value.district)} placeholder={mode === 'old' ? 'Chọn quận/huyện trước' : 'Chọn tỉnh trước'} onChange={(v) => set({ ward: v })} />
-        <label>Số nhà, tên đường *<input value={value.street} onChange={(e) => set({ street: e.target.value })} placeholder="VD: 12 Lê Lợi" /></label>
+        <label>Số nhà, tên đường *<input value={value.street} onChange={(e) => set({ street: e.target.value })} placeholder="VD: 12 Lê Lợi, Bến Thành, Quận 1" /></label>
       </div>
+      {suggestions.length > 0 && (
+        <div className="addr-sug">
+          <small className="muted">Gợi ý theo địa chỉ bạn nhập:</small>
+          {suggestions.map((c, i) => (
+            <button type="button" key={i} className="addr-chip" onClick={() => onChange({ mode: c.mode, province: c.province, district: c.district || '', ward: c.ward || '', street: c.street || value.street })}>
+              <span className={`tag ${c.mode}`}>{c.mode === 'new' ? 'Mới' : 'Cũ'}</span> {suggestLabel(c)}
+            </button>
+          ))}
+        </div>
+      )}
       {preview && <p className="addr-preview">📍 {preview}</p>}
     </div>
   )
