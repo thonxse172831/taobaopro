@@ -1,4 +1,4 @@
-import { MongoClient } from 'mongodb'
+import { GridFSBucket, MongoClient } from 'mongodb'
 
 export async function openDb(rawUri, dbName = 'taobaopro') {
   if (!rawUri) throw new Error('Thiếu biến môi trường MONGODB_URI (chuỗi kết nối MongoDB Atlas)')
@@ -20,6 +20,7 @@ export async function openDb(rawUri, dbName = 'taobaopro') {
   const payments = db.collection('payments')
   await payments.createIndex({ at: -1 })
   const images = db.collection('images')
+  const videos = new GridFSBucket(db, { bucketName: 'videos' }) // video lớn hơn 16MB/document nên dùng GridFS
   const chats = db.collection('chats')
   await chats.createIndex({ updatedAt: -1 })
   const now = () => new Date().toISOString()
@@ -62,6 +63,17 @@ export async function openDb(rawUri, dbName = 'taobaopro') {
     // Ảnh mẫu hàng lưu riêng từng ảnh (không nhét base64 vào danh sách mẫu → tránh vượt 16MB/document)
     saveImage: async (img) => { await images.insertOne({ ...img, createdAt: now() }) },
     getImage: async (id) => images.findOne({ _id: id }),
+    saveVideo: (id, buf, type) => new Promise((resolve, reject) => {
+      const up = videos.openUploadStreamWithId(id, id, { metadata: { type } })
+      up.on('finish', resolve).on('error', reject)
+      up.end(buf)
+    }),
+    videoInfo: async (id) => {
+      const f = await db.collection('videos.files').findOne({ _id: id })
+      return f && { length: f.length, type: f.metadata?.type || 'video/mp4' }
+    },
+    // end: vị trí byte cuối (bao gồm) như trong header Range
+    videoStream: (id, start, end) => videos.openDownloadStream(id, { start, end: end + 1 }),
     // Chat trực tiếp khách ↔ shop: mỗi cuộc trò chuyện một document, giữ tối đa 500 tin gần nhất
     createChat: async (c) => { await chats.insertOne({ ...c, createdAt: now(), updatedAt: now() }) },
     getChat: async (id) => chats.findOne({ _id: id }),

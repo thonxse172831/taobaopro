@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { MAX_IMAGES, uploadImage } from './images'
+import { MAX_VIDEOS, MAX_VIDEO_MB, isVideoUrl, uploadVideo, youtubeId, youtubeThumb } from './media'
 
 // Quản lý bộ ảnh của một mẫu: tải nhiều ảnh (chọn / kéo thả / dán link), xếp thứ tự, chọn ảnh chính, xóa
 // onBusy(n): báo số ảnh đang tải để form khóa nút Lưu
@@ -86,6 +87,73 @@ export default function ImageManager({ images, onChange, onBusy }) {
         <input type="url" placeholder="Hoặc dán link ảnh https://…" value={link} onChange={(e) => setLink(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addLink() } }} />
         <button type="button" onClick={addLink} disabled={!link.trim()}>Thêm link</button>
       </div>
+      {err && <small className="err">{err}</small>}
+    </div>
+  )
+}
+
+// Video của mẫu: dán link YouTube / .mp4, hoặc tải file video lên (tối đa 30MB)
+export function VideoManager({ videos, onChange, onBusy }) {
+  const file = useRef(null)
+  const [link, setLink] = useState('')
+  const [err, setErr] = useState('')
+  const [progress, setProgress] = useState(null) // % đang tải, null = không tải
+  useEffect(() => { onBusy?.(progress != null ? 1 : 0) }, [progress, onBusy])
+  const room = MAX_VIDEOS - videos.length
+
+  const addLink = () => {
+    const u = link.trim()
+    if (!isVideoUrl(u)) return setErr('Dán link YouTube (youtube.com, youtu.be, shorts) hoặc link file .mp4 https')
+    if (room <= 0) return setErr(`Tối đa ${MAX_VIDEOS} video mỗi mẫu`)
+    onChange((cur) => (cur.includes(u) ? cur : [...cur, u]))
+    setLink('')
+    setErr('')
+  }
+  const upload = async (f) => {
+    if (!f) return
+    if (room <= 0) return setErr(`Tối đa ${MAX_VIDEOS} video mỗi mẫu`)
+    setErr('')
+    setProgress(0)
+    try {
+      const url = await uploadVideo(f, setProgress)
+      onChange((cur) => [...cur, url].slice(0, MAX_VIDEOS))
+    } catch (x) {
+      setErr(x.message)
+    } finally {
+      setProgress(null)
+    }
+  }
+
+  return (
+    <div className="img-manager video-manager">
+      <div className="img-manager-head"><b>Video mẫu <small className="muted">({videos.length}/{MAX_VIDEOS}) · hiện trước ảnh ở trang sản phẩm</small></b></div>
+      {videos.length > 0 && (
+        <div className="video-list">
+          {videos.map((v, i) => {
+            const yt = youtubeId(v)
+            return (
+              <div className="video-item" key={v}>
+                {yt ? <img src={youtubeThumb(yt)} alt="" /> : <video src={v} preload="metadata" muted />}
+                <span className="video-play" aria-hidden="true">▶</span>
+                <small className="video-src">{yt ? 'YouTube' : v.startsWith('/api/video/') ? 'Video tải lên' : 'Link video'}</small>
+                <div className="img-tools">
+                  {i > 0 && <button type="button" title="Lên trước" onClick={() => onChange((cur) => { const a = [...cur]; [a[i - 1], a[i]] = [a[i], a[i - 1]]; return a })}>←</button>}
+                  <button type="button" className="img-del" title="Xóa video" onClick={() => onChange((cur) => cur.filter((x) => x !== v))}>✕</button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {progress != null && <div className="upload-bar"><span style={{ width: `${progress}%` }} /><small>Đang tải video… {progress}%</small></div>}
+      {room > 0 && (
+        <div className="img-link">
+          <input type="url" placeholder="Dán link YouTube / Shorts hoặc link .mp4…" value={link} onChange={(e) => setLink(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addLink() } }} />
+          <button type="button" onClick={addLink} disabled={!link.trim()}>Thêm link</button>
+          <button type="button" onClick={() => file.current?.click()} disabled={progress != null}>⬆ Tải video (≤{MAX_VIDEO_MB}MB)</button>
+        </div>
+      )}
+      <input ref={file} type="file" accept="video/mp4,video/quicktime,video/webm" hidden onChange={(e) => { upload(e.target.files[0]); e.target.value = '' }} />
       {err && <small className="err">{err}</small>}
     </div>
   )

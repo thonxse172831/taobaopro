@@ -9,7 +9,7 @@ import Links from './Links'
 import Workspace, { DEFAULT_LAYOUTS } from './Workspace'
 import Kanban, { Hl, STATUS_COLOR, orderMatches } from './Kanban'
 import OrderEditor from './OrderEditor'
-import ImageManager from './ImageManager'
+import ImageManager, { VideoManager } from './ImageManager'
 import { productImages } from './images'
 import { useShipping, ShippingConfig } from './Shipping'
 import ShopSettings from './ShopSettings'
@@ -369,7 +369,7 @@ function Dashboard({ products, orders, rate, cfg }) {
 }
 
 /* ---------- Catalog ---------- */
-const blankP = { name: '', image: '', images: [], sourceUrl: '', priceCny: '', domesticShipCny: 0, weightKg: 0.5, sizes: '', colors: '', tags: '', category: '', priceVnd: '', stock: 1, status: 'TQ' }
+const blankP = { name: '', image: '', images: [], videos: [], description: '', sourceUrl: '', priceCny: '', domesticShipCny: 0, weightKg: 0.5, sizes: '', colors: '', tags: '', category: '', priceVnd: '', stock: 1, status: 'TQ' }
 
 function Catalog({ products, setProducts, rate, cfg }) {
   const [f, setF] = useState(blankP)
@@ -379,7 +379,10 @@ function Catalog({ products, setProducts, rate, cfg }) {
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
   const list = (s) => s.split(',').map((x) => x.trim()).filter(Boolean)
 
-  const [uploading, setUploading] = useState(0)
+  const [imgBusy, setImgBusy] = useState(0)
+  const [vidBusy, setVidBusy] = useState(0)
+  const uploading = imgBusy + vidBusy
+  const setVideos = (next) => setF((x) => ({ ...x, videos: typeof next === 'function' ? next(x.videos || []) : next }))
   // ImageManager gọi kiểu setState (giá trị hoặc hàm cập nhật)
   const setImages = (next) => setF((x) => ({ ...x, images: typeof next === 'function' ? next(x.images || []) : next }))
   const submit = (e) => {
@@ -388,6 +391,7 @@ function Catalog({ products, setProducts, rate, cfg }) {
       ...f, priceCny: +f.priceCny, domesticShipCny: +f.domesticShipCny, weightKg: +f.weightKg, priceVnd: +f.priceVnd, stock: +f.stock,
       sizes: list(f.sizes), colors: list(f.colors), tags: list(f.tags),
       images: f.images || [], image: f.images?.[0] || '', // ảnh đầu tiên là ảnh chính
+      videos: f.videos || [], description: (f.description || '').trim(),
     }
     if (editId) setProducts((ps) => ps.map((x) => (x.id === editId ? { ...x, ...p } : x)))
     else setProducts((ps) => [{ ...p, id: uid(), createdAt: today() }, ...ps])
@@ -396,7 +400,7 @@ function Catalog({ products, setProducts, rate, cfg }) {
   }
   const edit = (p) => {
     setEditId(p.id)
-    setF({ ...p, images: productImages(p), sizes: p.sizes.join(', '), colors: p.colors.join(', '), tags: p.tags.join(', ') })
+    setF({ ...p, images: productImages(p), videos: p.videos || [], description: p.description || '', sizes: p.sizes.join(', '), colors: p.colors.join(', '), tags: p.tags.join(', ') })
     window.scrollTo(0, 0)
   }
   const copy = async (p) => {
@@ -431,7 +435,11 @@ function Catalog({ products, setProducts, rate, cfg }) {
             <select value={f.status} onChange={set('status')}>{Object.entries(STOCK_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
           </label>
         </div>
-        <ImageManager images={f.images || []} onChange={setImages} onBusy={setUploading} />
+        <ImageManager images={f.images || []} onChange={setImages} onBusy={setImgBusy} />
+        <VideoManager videos={f.videos || []} onChange={setVideos} onBusy={setVidBusy} />
+        <label className="desc-field">Mô tả sản phẩm <small className="muted">(chất liệu, form dáng, bảng size, lưu ý… — hiện ở trang chi tiết)</small>
+          <textarea rows="5" maxLength={5000} value={f.description || ''} onChange={set('description')} placeholder={'VD:\n- Chất liệu: len lông cừu pha, mềm, không xù\n- Form rộng, dài 68cm\n- Size M: 45-55kg, L: 55-65kg'} />
+        </label>
         {f.priceCny !== '' && <p>Giá final (vốn): <b>{vnd(pv)}</b>{f.priceVnd && <> · Lãi gộp: <b>{vnd(f.priceVnd - pv)}</b></>} <button type="button" onClick={() => setF({ ...f, priceVnd: Math.ceil(pv / 1000) * 1000 })}>Dùng làm giá bán</button></p>}
         <button className="primary" disabled={uploading > 0}>{uploading ? 'Đang tải ảnh…' : editId ? 'Lưu' : 'Thêm'}</button>
         {editId && <button type="button" onClick={() => { setEditId(null); setF(blankP) }}>Hủy</button>}

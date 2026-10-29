@@ -212,6 +212,12 @@ export function ChatWidget({ products, onBuy, user }) {
   const [open, setOpen] = useState(false)
   const [seen, setSeen] = useState(false)
   const live = useLiveChat(open)
+  // Nút "Chat" ở nơi khác (VD thanh mua hàng trang sản phẩm) mở khung chat qua sự kiện
+  useEffect(() => {
+    const on = () => { setOpen(true); setSeen(true) }
+    window.addEventListener('tb-open-chat', on)
+    return () => window.removeEventListener('tb-open-chat', on)
+  }, [])
   useEffect(() => {
     if (!open) return
     const on = (e) => e.key === 'Escape' && setOpen(false)

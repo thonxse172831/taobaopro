@@ -134,14 +134,14 @@ export default function Shop() {
           ))}
           {!img?.busy && grid.map((p, i) => (
             <article className={'card product' + (img && i === 0 && img.result?.best ? ' best' : '')} key={p.id} style={{ '--i': i }}>
-              <div className={'product-media' + (productImages(p).length > 1 ? ' multi' : '')} onClick={() => open(p.id, 'cart')} role="button" tabIndex={-1} title="Xem ảnh & chọn phân loại">
+              <a className={'product-media' + (productImages(p).length > 1 ? ' multi' : '')} href={`/p/${p.id}`} title="Xem chi tiết sản phẩm">
                 {p.image ? <img src={p.image} alt={p.name} loading="lazy" /> : <div className="noimg">Chưa có ảnh</div>}
                 {productImages(p).length > 1 && <img className="alt-img" src={productImages(p)[1]} alt="" loading="lazy" aria-hidden="true" />}
-                {productImages(p).length > 1 && <span className="img-count">📷 {productImages(p).length}</span>}
+                {(productImages(p).length > 1 || p.videos?.length > 0) && <span className="img-count">{p.videos?.length > 0 && '▶ '}📷 {productImages(p).length}</span>}
                 <span className={'stock-chip ' + p.status}>{STOCK_STATUS[p.status]}</span>
                 {p.similarity != null && <span className="match-chip">Khớp {p.similarity}%</span>}
-              </div>
-              <b>{p.name}</b>
+              </a>
+              <a className="product-name" href={`/p/${p.id}`}><b>{p.name}</b></a>
               <span className="price">{vnd(p.priceVnd)}</span>
               <small className="product-meta">Size {p.sizes.join(' · ')} — {p.colors.join(', ')}</small>
               <small className="eta">🚚 Nhận hàng {ETA[p.status]}</small>

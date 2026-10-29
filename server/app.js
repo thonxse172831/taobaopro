@@ -34,7 +34,7 @@ const itemId = (u) => {
   } catch { return '' }
 }
 const CARRIERS = new Set(['ghn', 'spx', 'jt', 'viettelpost'])
-const PUBLIC_FIELDS = ['id', 'name', 'image', 'images', 'sizes', 'colors', 'tags', 'category', 'priceVnd', 'stock', 'status', 'createdAt']
+const PUBLIC_FIELDS = ['id', 'name', 'image', 'images', 'videos', 'description', 'sizes', 'colors', 'tags', 'category', 'priceVnd', 'stock', 'status', 'createdAt']
 
 // Kênh đẩy tin tức thời (Server-Sent Events): 'admin' và 'public'
 const channels = { admin: new Set(), public: new Set() }
@@ -131,6 +131,8 @@ export async function createApp(env = process.env) {
         defaultSrc: ["'self'"],
         imgSrc: ["'self'", 'data:', 'blob:', 'https:', 'http:'],
         connectSrc: ["'self'", 'https:', 'http:'],
+        mediaSrc: ["'self'", 'blob:', 'https:'],
+        frameSrc: ['https://www.youtube-nocookie.com', 'https://www.youtube.com'],
         styleSrc: ["'self'", "'unsafe-inline'"],
         scriptSrc: ["'self'"],
         objectSrc: ["'none'"],
@@ -313,6 +315,54 @@ export async function createApp(env = process.env) {
     const img = /^[a-f0-9]{24}$/.test(req.params.id) && await db.getImage(req.params.id)
     if (!img) return res.status(404).end()
     res.set({ 'Content-Type': img.type, 'Cache-Control': 'public, max-age=31536000, immutable' }).send(Buffer.from(img.data?._bsontype === 'Binary' ? img.data.buffer : img.data))
+  })
+
+  // Video mẫu: hỗ trợ Range (tua video, Safari/iPhone bắt buộc phải có)
+  api.get('/video/:id', async (req, res) => {
+    const info = /^[a-f0-9]{24}$/.test(req.params.id) && await db.videoInfo(req.params.id)
+    if (!info) return res.status(404).end()
+    const size = info.length
+    res.set({ 'Content-Type': info.type, 'Accept-Ranges': 'bytes', 'Cache-Control': 'public, max-age=31536000, immutable' })
+    let start = 0
+    let end = size - 1
+    const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '')
+    if (m) {
+      if (m[1] === '') start = Math.max(0, size - Number(m[2])) // bytes=-500: 500 byte cuối
+      else { start = Number(m[1]); if (m[2] !== '') end = Math.min(Number(m[2]), size - 1) }
+      if (start > end || start >= size) return res.status(416).set('Content-Range', `bytes */${size}`).end()
+      res.status(206).set('Content-Range', `bytes ${start}-${end}/${size}`)
+    }
+    res.set('Content-Length', String(end - start + 1))
+    if (req.method === 'HEAD') return res.end()
+    const stream = db.videoStream(req.params.id, start, end)
+    stream.on('error', () => res.destroy())
+    req.on('close', () => stream.destroy())
+    stream.pipe(res)
+  })
+
+  // Trang chi tiết mẫu: thông tin công khai + số đã bán + mẫu tương tự
+  let soldCache = { at: 0, map: new Map() }
+  const soldCounts = async () => {
+    if (Date.now() - soldCache.at < 60 * 1000) return soldCache.map
+    const map = new Map()
+    for (const o of await db.listOrders()) {
+      if (['Đã hủy', 'Chờ cọc'].includes(o.status)) continue
+      for (const i of o.items || []) map.set(i.productId, (map.get(i.productId) || 0) + (Number(i.qty) || 0))
+    }
+    soldCache = { at: Date.now(), map }
+    return map
+  }
+  api.get('/public/products/:id', async (req, res) => {
+    const all = (await db.getKv('products')) || []
+    const p = all.find((x) => x.id === req.params.id)
+    if (!p) return res.status(404).json({ error: 'Mẫu này không còn bán' })
+    const pub = (x) => Object.fromEntries(PUBLIC_FIELDS.map((k) => [k, x[k]]))
+    const sold = await soldCounts()
+    // Tương tự: cùng danh mục trước, rồi chung tag
+    const score = (x) => (x.category === p.category ? 10 : 0) + (x.tags || []).filter((t) => (p.tags || []).includes(t)).length
+    const related = all.filter((x) => x.id !== p.id).map((x) => [score(x), x]).filter(([sc]) => sc > 0).sort((a, b) => b[0] - a[0]).slice(0, 8).map(([, x]) => ({ ...pub(x), sold: sold.get(x.id) || 0 }))
+    const shop = { ...DEFAULT_SHOP, ...(await db.getKv('shop')) }
+    res.set('Cache-Control', 'no-cache').json({ product: { ...pub(p), sold: sold.get(p.id) || 0 }, related, depositPct: depositEnabled(shop) ? Number(shop.depositPct) : 0 })
   })
 
   const orderLimit = rateLimit({ windowMs: 60 * 60 * 1000, limit: 15, standardHeaders: true, legacyHeaders: false, message: { error: 'Bạn đặt quá nhiều đơn, vui lòng thử lại sau' } })
@@ -510,6 +560,20 @@ export async function createApp(env = process.env) {
   })
   admin.get('/orders', async (req, res) => res.json(await db.listOrders()))
   admin.get('/payments', async (req, res) => res.json(await db.listPayments()))
+
+  // Tải video mẫu lên (gửi thẳng file, không base64): MP4/MOV/WebM tối đa 30MB, kiểm tra chữ ký file
+  const VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/webm']
+  admin.post('/videos', express.raw({ type: VIDEO_TYPES, limit: '30mb' }), async (req, res) => {
+    const type = String(req.headers['content-type'] || '').split(';')[0]
+    const buf = Buffer.isBuffer(req.body) ? req.body : null
+    if (!VIDEO_TYPES.includes(type) || !buf?.length) return res.status(400).json({ error: 'Chỉ nhận video MP4, MOV hoặc WebM' })
+    const isMp4 = buf.subarray(4, 8).toString() === 'ftyp'
+    const isWebm = buf.subarray(0, 4).toString('hex') === '1a45dfa3'
+    if (!(type === 'video/webm' ? isWebm : isMp4)) return res.status(400).json({ error: 'Tệp không phải video hợp lệ' })
+    const id = crypto.randomBytes(12).toString('hex')
+    await db.saveVideo(id, buf, type)
+    res.status(201).json({ url: `/api/video/${id}` })
+  })
 
   // Tải ảnh mẫu lên (trình duyệt đã nén sẵn): chỉ nhận JPEG/PNG/WebP thật (kiểm tra cả chữ ký file), tối đa 3MB
   const IMG_SIG = { 'image/jpeg': (b) => b[0] === 0xff && b[1] === 0xd8, 'image/png': (b) => b.subarray(0, 4).toString('hex') === '89504e47', 'image/webp': (b) => b.subarray(0, 4).toString() === 'RIFF' && b.subarray(8, 12).toString() === 'WEBP' }

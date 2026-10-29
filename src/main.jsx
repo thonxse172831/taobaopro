@@ -18,14 +18,17 @@ import Clip from './Clip.jsx'
 import { LoginPage } from './Account.jsx'
 import AccountPage from './AccountPage.jsx'
 import CartPage from './CartPage.jsx'
+import ProductPage from './ProductPage.jsx'
 
-// /admin = quản trị, /order = khách đặt hàng, /account = tài khoản khách, /cart = giỏ hàng, /track/MÃ = theo dõi đơn, /clip = nhận mẫu từ bookmarklet
+// /admin = quản trị, /order = khách đặt hàng, /account = tài khoản khách, /cart = giỏ hàng, /p/:id = chi tiết sản phẩm, /track/MÃ = theo dõi đơn, /clip = nhận mẫu từ bookmarklet
 function routeOf(path) {
   if (/^\/admin(\/|$)/.test(path)) return { name: 'admin' }
   if (/^\/order(\/|$)/.test(path)) return { name: 'order' }
   if (/^\/login\/?$/.test(path)) return { name: 'login' }
   if (/^\/account(\/|$)/.test(path)) return { name: 'account' }
   if (/^\/cart\/?$/.test(path)) return { name: 'cart' }
+  const pm = path.match(/^\/p\/([\w-]{1,40})(\/|$)/)
+  if (pm) return { name: 'product', id: pm[1] }
   if (/^\/clip\/?$/.test(path)) return { name: 'clip' }
   const t = path.match(/^\/track\/([A-Za-z0-9]{4,20})\/?$/)
   return t ? { name: 'track', code: t[1].toUpperCase() } : null
@@ -43,6 +46,7 @@ function Root() {
   if (route?.name === 'login') return <LoginPage />
   if (route?.name === 'account') return <AccountPage />
   if (route?.name === 'cart') return <CartPage />
+  if (route?.name === 'product') return <ProductPage id={route.id} />
   if (route?.name === 'clip') return <Clip />
   if (route?.name === 'track') return <Track code={route.code} />
   return <Shop />
