@@ -9,6 +9,8 @@ import Links from './Links'
 import Workspace, { DEFAULT_LAYOUTS } from './Workspace'
 import Kanban, { Hl, STATUS_COLOR, orderMatches } from './Kanban'
 import OrderEditor from './OrderEditor'
+import ImageManager from './ImageManager'
+import { productImages } from './images'
 import { useShipping, ShippingConfig } from './Shipping'
 import ShopSettings from './ShopSettings'
 import Scan from './Scan'
@@ -367,7 +369,7 @@ function Dashboard({ products, orders, rate, cfg }) {
 }
 
 /* ---------- Catalog ---------- */
-const blankP = { name: '', image: '', sourceUrl: '', priceCny: '', domesticShipCny: 0, weightKg: 0.5, sizes: '', colors: '', tags: '', category: '', priceVnd: '', stock: 1, status: 'TQ' }
+const blankP = { name: '', image: '', images: [], sourceUrl: '', priceCny: '', domesticShipCny: 0, weightKg: 0.5, sizes: '', colors: '', tags: '', category: '', priceVnd: '', stock: 1, status: 'TQ' }
 
 function Catalog({ products, setProducts, rate, cfg }) {
   const [f, setF] = useState(blankP)
@@ -377,18 +379,15 @@ function Catalog({ products, setProducts, rate, cfg }) {
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
   const list = (s) => s.split(',').map((x) => x.trim()).filter(Boolean)
 
-  const upload = (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    const r = new FileReader()
-    r.onload = () => setF((x) => ({ ...x, image: r.result }))
-    r.readAsDataURL(file)
-  }
+  const [uploading, setUploading] = useState(0)
+  // ImageManager gọi kiểu setState (giá trị hoặc hàm cập nhật)
+  const setImages = (next) => setF((x) => ({ ...x, images: typeof next === 'function' ? next(x.images || []) : next }))
   const submit = (e) => {
     e.preventDefault()
     const p = {
       ...f, priceCny: +f.priceCny, domesticShipCny: +f.domesticShipCny, weightKg: +f.weightKg, priceVnd: +f.priceVnd, stock: +f.stock,
       sizes: list(f.sizes), colors: list(f.colors), tags: list(f.tags),
+      images: f.images || [], image: f.images?.[0] || '', // ảnh đầu tiên là ảnh chính
     }
     if (editId) setProducts((ps) => ps.map((x) => (x.id === editId ? { ...x, ...p } : x)))
     else setProducts((ps) => [{ ...p, id: uid(), createdAt: today() }, ...ps])
@@ -397,7 +396,7 @@ function Catalog({ products, setProducts, rate, cfg }) {
   }
   const edit = (p) => {
     setEditId(p.id)
-    setF({ ...p, sizes: p.sizes.join(', '), colors: p.colors.join(', '), tags: p.tags.join(', ') })
+    setF({ ...p, images: productImages(p), sizes: p.sizes.join(', '), colors: p.colors.join(', '), tags: p.tags.join(', ') })
     window.scrollTo(0, 0)
   }
   const copy = async (p) => {
@@ -419,7 +418,6 @@ function Catalog({ products, setProducts, rate, cfg }) {
         <div className="grid3">
           <label>Tên mẫu<input required value={f.name} onChange={set('name')} /></label>
           <label>Link Taobao/1688<input type="url" value={f.sourceUrl} onChange={set('sourceUrl')} /></label>
-          <label>Ảnh<input type="file" accept="image/*" onChange={upload} /></label>
           <label>Giá nhập (¥)<input required type="number" step="0.01" value={f.priceCny} onChange={set('priceCny')} /></label>
           <label>Ship nội địa TQ (¥)<input type="number" step="0.01" value={f.domesticShipCny} onChange={set('domesticShipCny')} /></label>
           <label>Cân nặng (kg)<input type="number" step="0.01" value={f.weightKg} onChange={set('weightKg')} /></label>
@@ -433,15 +431,19 @@ function Catalog({ products, setProducts, rate, cfg }) {
             <select value={f.status} onChange={set('status')}>{Object.entries(STOCK_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
           </label>
         </div>
+        <ImageManager images={f.images || []} onChange={setImages} onBusy={setUploading} />
         {f.priceCny !== '' && <p>Giá final (vốn): <b>{vnd(pv)}</b>{f.priceVnd && <> · Lãi gộp: <b>{vnd(f.priceVnd - pv)}</b></>} <button type="button" onClick={() => setF({ ...f, priceVnd: Math.ceil(pv / 1000) * 1000 })}>Dùng làm giá bán</button></p>}
-        <button className="primary">{editId ? 'Lưu' : 'Thêm'}</button>
+        <button className="primary" disabled={uploading > 0}>{uploading ? 'Đang tải ảnh…' : editId ? 'Lưu' : 'Thêm'}</button>
         {editId && <button type="button" onClick={() => { setEditId(null); setF(blankP) }}>Hủy</button>}
       </form>
       <div className="row"><input placeholder="Tìm tên / tag / danh mục…" value={q} onChange={(e) => setQ(e.target.value)} />{msg && <span className="ok">{msg}</span>}</div>
       <div className="products">
         {shown.map((p) => (
           <div className="card product" key={p.id}>
-            {p.image ? <img src={p.image} alt={p.name} /> : <div className="noimg">Chưa có ảnh</div>}
+            <div className="product-media">
+              {p.image ? <img src={p.image} alt={p.name} loading="lazy" /> : <div className="noimg">Chưa có ảnh</div>}
+              {productImages(p).length > 1 && <span className="img-count">📷 {productImages(p).length}</span>}
+            </div>
             <b>{p.name}</b>
             <div>{p.tags.map((t) => <span className="tag" key={t}>{t}</span>)}</div>
             <small>Vốn {vnd(costVnd(p, rate, cfg))} → Bán {vnd(p.priceVnd)} ({p.priceCny}¥)</small>

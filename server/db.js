@@ -19,6 +19,7 @@ export async function openDb(rawUri, dbName = 'taobaopro') {
   await orders.createIndex({ status: 1 })
   const payments = db.collection('payments')
   await payments.createIndex({ at: -1 })
+  const images = db.collection('images')
   const chats = db.collection('chats')
   await chats.createIndex({ updatedAt: -1 })
   const now = () => new Date().toISOString()
@@ -58,6 +59,9 @@ export async function openDb(rawUri, dbName = 'taobaopro') {
       }, { upsert: true })
     },
     deleteOrder: async (id) => { await orders.deleteOne({ _id: id }) },
+    // Ảnh mẫu hàng lưu riêng từng ảnh (không nhét base64 vào danh sách mẫu → tránh vượt 16MB/document)
+    saveImage: async (img) => { await images.insertOne({ ...img, createdAt: now() }) },
+    getImage: async (id) => images.findOne({ _id: id }),
     // Chat trực tiếp khách ↔ shop: mỗi cuộc trò chuyện một document, giữ tối đa 500 tin gần nhất
     createChat: async (c) => { await chats.insertOne({ ...c, createdAt: now(), updatedAt: now() }) },
     getChat: async (id) => chats.findOne({ _id: id }),

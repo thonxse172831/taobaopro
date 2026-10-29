@@ -34,7 +34,7 @@ const itemId = (u) => {
   } catch { return '' }
 }
 const CARRIERS = new Set(['ghn', 'spx', 'jt', 'viettelpost'])
-const PUBLIC_FIELDS = ['id', 'name', 'image', 'sizes', 'colors', 'tags', 'category', 'priceVnd', 'stock', 'status', 'createdAt']
+const PUBLIC_FIELDS = ['id', 'name', 'image', 'images', 'sizes', 'colors', 'tags', 'category', 'priceVnd', 'stock', 'status', 'createdAt']
 
 // Kênh đẩy tin tức thời (Server-Sent Events): 'admin' và 'public'
 const channels = { admin: new Set(), public: new Set() }
@@ -289,9 +289,11 @@ export async function createApp(env = process.env) {
   })
 
   // Chuyển tiếp ảnh mẫu ở domain ngoài (cùng origin) để trình duyệt đọc được pixel khi so khớp ảnh
+  // ?i=n: ảnh thứ n trong bộ ảnh của mẫu (mặc định ảnh chính)
   api.get('/public/img/:id', async (req, res) => {
     const p = ((await db.getKv('products')) || []).find((x) => x.id === req.params.id)
-    const url = httpsUrl(p?.image)
+    const list = p?.images?.length ? p.images : [p?.image]
+    const url = httpsUrl(list[Math.max(0, Math.floor(Number(req.query.i)) || 0)])
     let host = ''
     try { host = new URL(url).hostname } catch { /* không có ảnh */ }
     if (!url || host === 'localhost' || /^[\d.]+$/.test(host) || host.includes(':')) return res.status(404).end()
@@ -304,6 +306,13 @@ export async function createApp(env = process.env) {
     } catch {
       res.status(404).end()
     }
+  })
+
+  // Ảnh mẫu do shop tải lên: tên ngẫu nhiên, nội dung không đổi → cho trình duyệt cache lâu
+  api.get('/img/:id', async (req, res) => {
+    const img = /^[a-f0-9]{24}$/.test(req.params.id) && await db.getImage(req.params.id)
+    if (!img) return res.status(404).end()
+    res.set({ 'Content-Type': img.type, 'Cache-Control': 'public, max-age=31536000, immutable' }).send(Buffer.from(img.data?._bsontype === 'Binary' ? img.data.buffer : img.data))
   })
 
   const orderLimit = rateLimit({ windowMs: 60 * 60 * 1000, limit: 15, standardHeaders: true, legacyHeaders: false, message: { error: 'Bạn đặt quá nhiều đơn, vui lòng thử lại sau' } })
@@ -501,6 +510,19 @@ export async function createApp(env = process.env) {
   })
   admin.get('/orders', async (req, res) => res.json(await db.listOrders()))
   admin.get('/payments', async (req, res) => res.json(await db.listPayments()))
+
+  // Tải ảnh mẫu lên (trình duyệt đã nén sẵn): chỉ nhận JPEG/PNG/WebP thật (kiểm tra cả chữ ký file), tối đa 3MB
+  const IMG_SIG = { 'image/jpeg': (b) => b[0] === 0xff && b[1] === 0xd8, 'image/png': (b) => b.subarray(0, 4).toString('hex') === '89504e47', 'image/webp': (b) => b.subarray(0, 4).toString() === 'RIFF' && b.subarray(8, 12).toString() === 'WEBP' }
+  admin.post('/images', async (req, res) => {
+    const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+=*)$/.exec(String(req.body?.data || ''))
+    if (!m) return res.status(400).json({ error: 'Chỉ nhận ảnh JPG, PNG hoặc WebP' })
+    const buf = Buffer.from(m[2], 'base64')
+    if (buf.length > 3 * 1024 * 1024) return res.status(413).json({ error: 'Ảnh quá lớn (tối đa 3MB)' })
+    if (!IMG_SIG[m[1]](buf)) return res.status(400).json({ error: 'Tệp không phải ảnh hợp lệ' })
+    const id = crypto.randomBytes(12).toString('hex')
+    await db.saveImage({ _id: id, type: m[1], size: buf.length, data: buf })
+    res.status(201).json({ url: `/api/img/${id}` })
+  })
 
   // Hộp tin nhắn của shop
   admin.get('/chats', async (req, res) => {

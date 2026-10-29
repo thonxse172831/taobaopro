@@ -91,14 +91,17 @@ function load(src) {
 }
 
 const productFeatures = new Map()
-function ofProduct(p) {
-  const src = /^https?:/i.test(p.image) ? `/api/public/img/${encodeURIComponent(p.id)}` : p.image
-  const key = p.id + '|' + p.image.length + '|' + p.image.slice(-24)
+const MAX_PER_PRODUCT = 4 // so khớp tối đa 4 ảnh đầu của mỗi mẫu cho nhanh
+// Ảnh ở domain ngoài đọc qua proxy cùng origin (canvas mới đọc được pixel); ảnh shop tải lên (/api/img/...) đọc trực tiếp
+function ofImage(p, url, i) {
+  const src = /^https?:/i.test(url) ? `/api/public/img/${encodeURIComponent(p.id)}?i=${i}` : url
+  const key = p.id + '|' + i + '|' + url.length + '|' + url.slice(-24)
   if (!productFeatures.has(key)) {
     productFeatures.set(key, load(src).then((img) => features(pixels(img, CROPS[0]))).catch((e) => { productFeatures.delete(key); throw e }))
   }
   return productFeatures.get(key)
 }
+const imagesOf = (p) => (p.images?.length ? p.images : p.image ? [p.image] : []).slice(0, MAX_PER_PRODUCT)
 
 export async function searchProductsByImage(src, products, onProgress = () => {}) {
   const img = await load(src)
@@ -107,12 +110,14 @@ export async function searchProductsByImage(src, products, onProgress = () => {}
   let scanned = 0
   let skipped = 0
   for (const product of products) {
-    if (product.image) {
-      try {
-        const f = await ofProduct(product)
-        const score = Math.max(...queries.map((q) => similarity(q, f)))
+    const urls = imagesOf(product)
+    if (urls.length) {
+      // Điểm của mẫu = ảnh giống nhất trong bộ ảnh của mẫu
+      const feats = (await Promise.allSettled(urls.map((u, i) => ofImage(product, u, i)))).filter((r) => r.status === 'fulfilled').map((r) => r.value)
+      if (feats.length) {
+        const score = Math.max(...feats.flatMap((f) => queries.map((q) => similarity(q, f))))
         matches.push({ product, score, similarity: Math.round(score * 100) })
-      } catch {
+      } else {
         skipped += 1
       }
     }

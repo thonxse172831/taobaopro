@@ -1,13 +1,50 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import { AddressPicker, EMPTY_ADDR, addrError } from './address'
 import DepositPay from './Deposit'
 import { cartLines } from './cart'
+import { productImages } from './images'
 import { vnd, depositOf, fullAddress, STOCK_STATUS, ETA } from './lib'
 
 const PHONE_RE = /^0\d{9}$/
 
 // Chọn size / màu / số lượng trước khi cho vào giỏ
+// Thư viện ảnh của mẫu: vuốt ngang (điện thoại), mũi tên + ảnh nhỏ (máy tính)
+export function Gallery({ images, name }) {
+  const [i, setI] = useState(0)
+  const track = useRef(null)
+  const go = (n) => {
+    const k = (n + images.length) % images.length
+    setI(k)
+    track.current?.children[k]?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' })
+  }
+  // Vuốt tay: cập nhật ảnh đang xem theo vị trí cuộn
+  const onScroll = (e) => {
+    const el = e.currentTarget
+    const k = Math.round(el.scrollLeft / el.clientWidth)
+    if (k !== i) setI(k)
+  }
+  return (
+    <div className="gallery">
+      <div className="gallery-track" ref={track} onScroll={onScroll}>
+        {images.map((src, k) => <img key={src} src={src} alt={`${name} – ảnh ${k + 1}`} loading={k ? 'lazy' : 'eager'} />)}
+      </div>
+      {images.length > 1 && (
+        <>
+          <button type="button" className="gallery-nav prev" onClick={() => go(i - 1)} aria-label="Ảnh trước">‹</button>
+          <button type="button" className="gallery-nav next" onClick={() => go(i + 1)} aria-label="Ảnh sau">›</button>
+          <span className="gallery-count">{i + 1}/{images.length}</span>
+          <div className="gallery-thumbs">
+            {images.map((src, k) => (
+              <button key={src} type="button" className={k === i ? 'on' : ''} onClick={() => go(k)} aria-label={`Xem ảnh ${k + 1}`}><img src={src} alt="" loading="lazy" /></button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // mode 'buy': nút chính là "Đặt hàng ngay" (chuyển sang giỏ); 'cart': nút chính là "Thêm vào giỏ"
 export function ProductPicker({ product: p, onAdd, onClose, mode = 'cart' }) {
   // Không tự chọn sẵn: khách phải tự bấm size/màu (chỉ tự chọn khi mẫu có đúng 1 lựa chọn)
@@ -31,8 +68,9 @@ export function ProductPicker({ product: p, onAdd, onClose, mode = 'cart' }) {
   return (
     <div className="modal" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal-box card picker" role="dialog" aria-label={`Chọn phân loại ${p.name}`}>
+        {productImages(p).length > 0 && <Gallery images={productImages(p)} name={p.name} />}
         <div className="picker-head">
-          {p.image ? <img src={p.image} alt="" /> : <div className="chat-noimg" aria-hidden="true">🛍</div>}
+          {!productImages(p).length && <div className="chat-noimg" aria-hidden="true">🛍</div>}
           <div>
             <b>{p.name}</b>
             <span className="price">{vnd(p.priceVnd)}</span>

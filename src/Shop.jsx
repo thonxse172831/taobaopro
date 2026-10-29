@@ -6,6 +6,7 @@ import { useCart } from './cart'
 import { useCatalog } from './catalog'
 import { BottomBar, SiteHeader } from './SiteHeader'
 import { ScanIcon } from './ui'
+import { productImages } from './images'
 import { vnd, STOCK_STATUS, ETA } from './lib'
 
 const MAX_IMAGE = 12 * 1024 * 1024
@@ -133,8 +134,10 @@ export default function Shop() {
           ))}
           {!img?.busy && grid.map((p, i) => (
             <article className={'card product' + (img && i === 0 && img.result?.best ? ' best' : '')} key={p.id} style={{ '--i': i }}>
-              <div className="product-media">
+              <div className={'product-media' + (productImages(p).length > 1 ? ' multi' : '')} onClick={() => open(p.id, 'cart')} role="button" tabIndex={-1} title="Xem ảnh & chọn phân loại">
                 {p.image ? <img src={p.image} alt={p.name} loading="lazy" /> : <div className="noimg">Chưa có ảnh</div>}
+                {productImages(p).length > 1 && <img className="alt-img" src={productImages(p)[1]} alt="" loading="lazy" aria-hidden="true" />}
+                {productImages(p).length > 1 && <span className="img-count">📷 {productImages(p).length}</span>}
                 <span className={'stock-chip ' + p.status}>{STOCK_STATUS[p.status]}</span>
                 {p.similarity != null && <span className="match-chip">Khớp {p.similarity}%</span>}
               </div>
